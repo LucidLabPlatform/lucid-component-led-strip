@@ -2,6 +2,8 @@
 
 LUCID component for WS281x LED strip control on Raspberry Pi. Ported from [led_truss](https://github.com/IERoboticsAILab/led_truss) — a FastAPI service for the OptiTrack truss — into the LUCID agent component model, replacing REST endpoints with MQTT commands.
 
+**Architecture:** The component runs inside **lucid-agent-core** (as user `lucid`) and talks to a separate **LED strip helper daemon** over a Unix socket. Only the helper runs as **root** and owns the rpi_ws281x hardware, so the agent never needs root or DMA access.
+
 ---
 
 ## Hardware
@@ -14,15 +16,24 @@ LUCID component for WS281x LED strip control on Raspberry Pi. Ported from [led_t
 - **6× 5V/20A PSUs** — one per 5m segment for power injection
 - Common ground between PSUs and Raspberry Pi
 
-> `sudo` is required at runtime for PWM hardware access.
-
 ---
 
 ## Installation
 
-**On Raspberry Pi** — The component is installed via the LUCID agent-core MQTT command `cmd/components/install`. Publish a payload that points to your GitHub release wheel; the agent downloads the wheel and runs `pip install wheel.whl`. Pip will install the wheel and its dependency `rpi-ws281x` (which builds on the Pi). No extras needed.
+**On Raspberry Pi**
 
-Example install payload (publish to `lucid/agents/<agent_id>/cmd/components/install`):
+1. **One-time on the Pi:** Allow the agent user to run the helper installer without a password (so the agent can install the helper after a successful component install):
+   ```bash
+   echo 'lucid ALL=(ALL) NOPASSWD: /home/lucid/lucid-agent-core/venv/bin/lucid-led-strip-helper-installer --install-once' | sudo tee /etc/sudoers.d/lucid-led-strip-helper
+   sudo chmod 440 /etc/sudoers.d/lucid-led-strip-helper
+   ```
+   If your venv path is different, adjust the path in the sudoers file.
+
+2. **Install via MQTT** — publish to `lucid/agents/<agent_id>/cmd/components/install` with the led_strip payload below. The agent installs the wheel, registers the component, and then runs the helper installer (copy unit + `systemctl enable --now lucid-led-strip-helper`). Use a wheel built with the `[pi]` extra so the venv has `lucid-led-strip-helper-installer`; or run `pip install 'lucid-component-led-strip[pi]'` in the agent venv before the first MQTT install.
+
+3. **Keep lucid-agent-core as user `lucid`** — no root. The component connects to the helper at `/run/lucid/led-strip.sock` (override with `LUCID_LED_STRIP_SOCKET`).
+
+Payload (publish to `lucid/agents/<agent_id>/cmd/components/install`):
 
 ```json
 {
@@ -41,9 +52,7 @@ Example install payload (publish to `lucid/agents/<agent_id>/cmd/components/inst
 }
 ```
 
-From a local clone on the Pi you can also run `pip install .` (pip will install `rpi-ws281x` there).
-
-**Development on macOS** — `rpi-ws281x` only builds on Linux. Use `make setup-venv` to create a venv that installs the package with `--no-deps` and then installs all dependencies except `rpi-ws281x`. You can run tests (they stub the driver) and build the wheel. The wheel lists `rpi-ws281x` as required; when that wheel is installed on the Pi, pip installs it there.
+**Development on macOS** — Install without the `[pi]` extra. The component (client only) runs; the helper is not used. Use `make setup-venv` with `--no-deps` and no `rpi-ws281x` for tests and wheel build.
 
 ```bash
 git clone https://github.com/your-org/lucid-component-led-strip
@@ -202,8 +211,13 @@ mosquitto_pub -t "$TOPIC/cmd/reset" \
 
 ```
 src/lucid_component_led_strip/
-├── component.py          # LEDStripComponent — LUCID lifecycle + command handlers
-├── hardware.py           # Low-level WS281x hardware controller
+├── component.py          # LEDStripComponent — talks to helper via client
+├── client.py             # IPC client (Unix socket) used by component
+├── protocol.py           # IPC command/response constants
+├── helper_server.py      # Root daemon: lucid-led-strip-helper entry point
+├── hardware.py           # Low-level WS281x (used only by helper)
+├── systemd/
+│   └── lucid-led-strip-helper.service
 └── effects/
     ├── __init__.py       # EffectOrchestrator + package re-exports
     ├── glow.py
@@ -255,4 +269,4 @@ Tests stub out `rpi_ws281x` so they run without hardware. For full integration t
 - Start a new effect to automatically stop the previous one.
 - `cmd/reset` stops all effects and clears the strip.
 - Hardware config changes (`strip1_count`, pins) require a component restart to take effect; the `cfg/set` result will include an error message indicating this.
-- `sudo` is required for PWM access on Raspberry Pi.
+- Only the **lucid-led-strip-helper** service runs as root; **lucid-agent-core** stays as user `lucid`.

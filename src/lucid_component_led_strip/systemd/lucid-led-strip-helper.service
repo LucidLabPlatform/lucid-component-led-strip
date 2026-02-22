@@ -1,0 +1,22 @@
+w[Unit]
+Description=LUCID LED strip helper (root-owned, owns rpi_ws281x hardware)
+After=network-online.target
+# Start before agent so socket exists when component starts
+Before=lucid-agent-core.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+# Socket path: /run/lucid/led-strip.sock (set LUCID_LED_STRIP_SOCKET to override)
+RuntimeDirectory=lucid
+RuntimeDirectoryMode=0755
+# Use the same venv as lucid-agent-core; adjust if your install path differs
+ExecStart=/home/lucid/lucid-agent-core/venv/bin/lucid-led-strip-helper
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+SyslogIdentifier=lucid-led-strip-helper
+
+[Install]
+WantedBy=multi-user.target

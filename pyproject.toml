@@ -12,15 +12,18 @@ license = {text = "MIT"}
 authors = [{ name = "LUCID" }]
 dependencies = [
   "lucid-component-base @ git+https://github.com/LucidLabPlatform/lucid-component-base@v1.0.0",
-  "numpy>=2.0.0",
-  "rpi-ws281x>=5.0.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+pi = ["numpy>=2.0.0", "rpi-ws281x>=5.0.0"]
 
 [project.entry-points."lucid.components"]
 led_strip = "lucid_component_led_strip.component:LEDStripComponent"
+
+[project.scripts]
+lucid-led-strip-helper = "lucid_component_led_strip.helper_server:main"
+lucid-led-strip-helper-installer = "lucid_component_led_strip.helper_installer:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -28,6 +31,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["lucid_component_led_strip*"]
+
+[tool.setuptools.package-data]
+lucid_component_led_strip = ["systemd/*.service"]
 
 [tool.setuptools_scm]
 version_scheme = "no-guess-dev"
