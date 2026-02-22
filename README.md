@@ -22,7 +22,7 @@ LUCID component for WS281x LED strip control on Raspberry Pi. Ported from [led_t
 
 **On Raspberry Pi**
 
-1. **Install via MQTT** — publish to `lucid/agents/<agent_id>/cmd/components/install` with the led_strip payload below. The agent installs the wheel and registers the component. Use a wheel built with the `[pi]` extra so the venv has the helper installer.
+1. **Install via MQTT** — publish to `lucid/agents/<agent_id>/cmd/components/install` with the led_strip payload below. The agent installs the wheel, then runs `pip install lucid-component-led-strip[pi]` so the venv has `rpi_ws281x` for the helper, and registers the component.
 
 2. **Start the helper daemon** — after the MQTT install, run once on the Pi (then restart the agent if it was already running):
    ```bash
@@ -260,6 +260,17 @@ Tests stub out `rpi_ws281x` so they run without hardware. For full integration t
 | Bitcoin effect | Removed (external dependency) |
 | Heart rate effect | Removed (Playwright dependency) |
 | Home Assistant REST commands | Replace with MQTT commands via HA `mqtt.publish` |
+
+---
+
+## Troubleshooting
+
+**Helper exits with `No module named 'rpi_ws281x'`** — The agent’s MQTT install runs `pip install lucid-component-led-strip[pi]` after the wheel; if that failed or you installed before this was added, on the Pi run:
+
+```bash
+sudo /home/lucid/lucid-agent-core/venv/bin/pip install 'lucid-component-led-strip[pi]'
+sudo systemctl restart lucid-led-strip-helper
+```
 
 ---
 
