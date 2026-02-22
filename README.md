@@ -129,9 +129,10 @@ Results are published (non-retained, QoS 1) to `evt/effect/<name>/result`:
 
 | Topic | Parameters | Description |
 |-------|-----------|-------------|
-| `cmd/effect/set-color` | `color?: {r,g,b}` | Solid color (white if omitted) |
-| `cmd/effect/set-range-percent` | `color, start_percent, end_percent` | Color by percentage range |
-| `cmd/effect/set-range-exact` | `color, start_index, end_index` | Color by LED index range |
+| `cmd/clear` | — | Turn off all LEDs. Result: `evt/clear/result` |
+| `cmd/set-color` | `color?: {r,g,b}` | Solid color (white if omitted). Result: `evt/set-color/result` |
+| `cmd/set-range-percent` | `color, start_percent, end_percent` | Color by percentage range. Result: `evt/set-range-percent/result` |
+| `cmd/set-range-exact` | `color, start_index, end_index` | Color by LED index range. Result: `evt/set-range-exact/result` |
 | `cmd/effect/glow` | `color?, wait_ms?` | Pulsing glow |
 | `cmd/effect/wave` | `color?, cycles?, speed?, wait_ms?` | Moving cosine waves |
 | `cmd/effect/color-wipe` | `color?, wait_ms?` | Pixel-by-pixel wipe |
@@ -142,7 +143,7 @@ Results are published (non-retained, QoS 1) to `evt/effect/<name>/result`:
 | `cmd/effect/theater-chase` | `color?, wait_ms?` | Theater chase (null color = rainbow) |
 | `cmd/effect/running` | `wait_ms?, width?` | Running light |
 
-Brightness is configured only via `cmd/cfg/set` with `set: {"brightness": 0-255}`.
+Brightness is configured only via `cmd/cfg/set` with `set: {"brightness": 0-255}`. There is no `cmd/effect/set-brightness`.
 
 ### Telemetry
 
@@ -182,7 +183,7 @@ TOPIC="lucid/agents/zepheros/components/led_strip"
 mosquitto_pub -t "$TOPIC/cmd/clear" -m '{"request_id":"0"}'
 
 # Set all LEDs to white
-mosquitto_pub -t "$TOPIC/cmd/effect/set-color" \
+mosquitto_pub -t "$TOPIC/cmd/set-color" \
   -m '{"request_id":"1"}'
 
 # Start rainbow cycle

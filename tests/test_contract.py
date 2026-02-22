@@ -96,9 +96,9 @@ def test_capabilities_includes_standard_and_effects():
 
     expected_effects = [
         "clear",
-        "effect/set-color",
-        "effect/set-range-percent",
-        "effect/set-range-exact",
+        "set-color",
+        "set-range-percent",
+        "set-range-exact",
         "effect/glow",
         "effect/wave",
         "effect/color-wipe",
