@@ -62,7 +62,12 @@ class LEDStripComponent(Component):
         super().__init__(context)
         self._log = context.logger()
 
-        cfg = context.config or {}
+        # context.config may be AgentConfig (no .get) or a dict-like; use dict-like only
+        raw = context.config
+        if isinstance(raw, dict) or (hasattr(raw, "get") and callable(getattr(raw, "get"))):
+            cfg = raw
+        else:
+            cfg = {}
 
         # Hardware configuration — defaults match the truss installation.
         self._strip1_count: int = int(cfg.get("strip1_count", 896))
