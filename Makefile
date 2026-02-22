@@ -1,30 +1,27 @@
-# LUCID Component Template — use this Makefile when creating a new component.
-# After renaming the package, update PACKAGE below and the paths that use it.
-
 PYTHON ?= python3
 VENV ?= .venv
-PACKAGE = lucid_component_example
+PACKAGE = lucid_component_led_strip
 
 .PHONY: help setup setup-venv dev test test-unit test-integration test-coverage build clean
 
 help:
-	@echo "LUCID Component Template (example)"
-	@echo "  make setup           - No .env needed (component runs via agent-core)"
+	@echo "lucid-component-led-strip"
 	@echo "  make setup-venv      - Create .venv, install project + deps (run this first)"
 	@echo "  make test            - Unit + integration tests"
 	@echo "  make test-unit       - Unit tests only"
-	@echo "  make test-integration - Integration tests (if tests/integration exists)"
 	@echo "  make test-coverage   - Tests with coverage report"
-	@echo "  make build           - Build wheel and sdist (run make setup-venv first)"
+	@echo "  make build           - Build wheel and sdist"
 	@echo "  make clean           - Remove build artifacts"
 
 setup:
 	@echo "Components run via agent-core; no .env needed here."
 
+# On macOS, rpi-ws281x does not build (Linux-only). Install without deps then add
+# everything except rpi-ws281x so we can run tests and build the wheel.
 setup-venv:
 	@test -d $(VENV) || ($(PYTHON) -m venv $(VENV) && echo "Created $(VENV).")
-	@$(VENV)/bin/pip install -q -e ".[dev]"
-	@$(VENV)/bin/pip install -q build pytest-cov
+	@$(VENV)/bin/pip install -q -e . --no-deps
+	@$(VENV)/bin/pip install -q "lucid-component-base @ git+https://github.com/LucidLabPlatform/lucid-component-base@v1.0.0" "numpy>=2.0.0" pytest build pytest-cov
 	@echo "Ready. Run 'make test' or 'make build'."
 
 dev:

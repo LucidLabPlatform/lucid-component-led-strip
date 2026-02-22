@@ -3,29 +3,31 @@ requires = ["setuptools>=69", "setuptools_scm[toml]>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lucid-component-example"
+name = "lucid-component-led-strip"
 dynamic = ["version"]
-description = "Example LUCID component (template — copy and rename for your component)."
+description = "LUCID component for WS281x LED strip control on Raspberry Pi."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{ name = "LUCID" }]
 dependencies = [
   "lucid-component-base @ git+https://github.com/LucidLabPlatform/lucid-component-base@v1.0.0",
+  "numpy>=2.0.0",
+  "rpi-ws281x>=5.0.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
 
 [project.entry-points."lucid.components"]
-example = "lucid_component_example.component:ExampleComponent"
+led_strip = "lucid_component_led_strip.component:LEDStripComponent"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["lucid_component_example*"]
+include = ["lucid_component_led_strip*"]
 
 [tool.setuptools_scm]
 version_scheme = "no-guess-dev"
