@@ -22,14 +22,13 @@ LUCID component for WS281x LED strip control on Raspberry Pi. Ported from [led_t
 
 **On Raspberry Pi**
 
-1. **One-time on the Pi:** Allow the agent user to run the helper installer without a password (so the agent can install the helper after a successful component install):
-   ```bash
-   echo 'lucid ALL=(ALL) NOPASSWD: /home/lucid/lucid-agent-core/venv/bin/lucid-led-strip-helper-installer --install-once' | sudo tee /etc/sudoers.d/lucid-led-strip-helper
-   sudo chmod 440 /etc/sudoers.d/lucid-led-strip-helper
-   ```
-   If your venv path is different, adjust the path in the sudoers file.
+1. **Install via MQTT** — publish to `lucid/agents/<agent_id>/cmd/components/install` with the led_strip payload below. The agent installs the wheel and registers the component. Use a wheel built with the `[pi]` extra so the venv has the helper installer.
 
-2. **Install via MQTT** — publish to `lucid/agents/<agent_id>/cmd/components/install` with the led_strip payload below. The agent installs the wheel, registers the component, and then runs the helper installer (copy unit + `systemctl enable --now lucid-led-strip-helper`). Use a wheel built with the `[pi]` extra so the venv has `lucid-led-strip-helper-installer`; or run `pip install 'lucid-component-led-strip[pi]'` in the agent venv before the first MQTT install.
+2. **Start the helper daemon** — after the MQTT install, run once on the Pi (then restart the agent if it was already running):
+   ```bash
+   sudo /home/lucid/lucid-agent-core/venv/bin/lucid-agent-core install-led-strip-helper
+   ```
+   The agent does not run sudo; this command installs and starts the root-owned helper. If your venv path differs, use that path.
 
 3. **Keep lucid-agent-core as user `lucid`** — no root. The component connects to the helper at `/run/lucid/led-strip.sock` (override with `LUCID_LED_STRIP_SOCKET`).
 

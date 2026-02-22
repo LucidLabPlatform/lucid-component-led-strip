@@ -1,10 +1,10 @@
 """
 One-shot installer for the LED strip helper daemon.
 
-Run as root (e.g. sudo lucid-led-strip-helper-installer --install-once).
-Copies the helper systemd unit to /etc/systemd/system/, enables and starts
-the service. Used by the agent after a successful led_strip component install
-(via sudo) so everything happens from the single MQTT cmd/components/install.
+Run as root (e.g. sudo lucid-agent-core install-led-strip-helper, which
+invokes this). Copies the helper systemd unit to /etc/systemd/system/,
+enables and starts the service. The agent does not run sudo; run
+install-led-strip-helper once on the device after MQTT component install.
 """
 from __future__ import annotations
 
