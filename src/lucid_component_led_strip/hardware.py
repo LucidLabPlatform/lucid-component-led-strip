@@ -80,6 +80,8 @@ class LEDStripHardware:
 
         self._strip1.begin()
         self._strip2.begin()
+        # Software buffer of last-written [r,g,b] per pixel (for get_pixels readback)
+        self._pixel_buffer: list[list[int]] = [[0, 0, 0] for _ in range(self.LED_COUNT)]
         logger.info(
             "LED strips initialized: %d LEDs on GPIO%d, %d LEDs on GPIO%d",
             self.STRIP1_COUNT, self.STRIP1_PIN,
@@ -90,8 +92,18 @@ class LEDStripHardware:
     # Low-level pixel helpers
     # ------------------------------------------------------------------
 
+    def _color_to_rgb(self, color: Any) -> tuple[int, int, int]:
+        """Convert Color or 32-bit int to (r, g, b)."""
+        if hasattr(color, "__iter__") and not isinstance(color, (int, float)):
+            parts = list(color)
+            return (int(parts[0]) & 0xFF, int(parts[1]) & 0xFF, int(parts[2]) & 0xFF)
+        c = int(color)
+        return ((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF)
+
     def set_pixel_color(self, pixel_index: int, color: Any) -> None:
         """Set a single pixel by logical ring index."""
+        if 0 <= pixel_index < self.LED_COUNT:
+            self._pixel_buffer[pixel_index] = list(self._color_to_rgb(color))
         if pixel_index < self.STRIP1_COUNT:
             self._strip1.setPixelColor(pixel_index, color)
         else:
@@ -122,6 +134,10 @@ class LEDStripHardware:
     def clear_all(self) -> None:
         """Turn off all LEDs."""
         self.set_color_all(self._Color(0, 0, 0))
+
+    def get_pixel_buffer(self) -> list[list[int]]:
+        """Return current pixel buffer as list of [r,g,b] per pixel."""
+        return [list(p) for p in self._pixel_buffer]
 
     def set_color_range_percent(
         self, color: Any, start_percent: float, end_percent: float

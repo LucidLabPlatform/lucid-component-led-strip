@@ -23,6 +23,7 @@ LEDStripHardware = None
 from .protocol import (
     CMD_CLEAR,
     CMD_EFFECT,
+    CMD_GET_PIXELS,
     CMD_INIT,
     CMD_PING,
     CMD_RESET,
@@ -114,6 +115,13 @@ class HelperState:
             raise RuntimeError("hardware not initialized")
         self._orchestrator.stop()
         hw.clear_all()
+
+    def get_pixels(self) -> list[list[int]]:
+        """Return current pixel buffer as list of [r,g,b] per pixel."""
+        hw = self._hw()
+        if hw is None:
+            raise RuntimeError("hardware not initialized")
+        return hw.get_pixel_buffer()
 
     def set_color(self, color: dict | None) -> None:
         from rpi_ws281x import Color
@@ -246,6 +254,9 @@ def _handle_request(state: HelperState, req: dict) -> dict:
                 str(req.get("name", "")),
                 req.get("params") or {},
             )
+        elif cmd == CMD_GET_PIXELS:
+            pixels = state.get_pixels()
+            return {"id": rid, "ok": True, "pixels": pixels}
         else:
             return {"id": rid, "ok": False, "error": f"unknown cmd: {cmd}"}
         return {"id": rid, "ok": True}

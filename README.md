@@ -110,11 +110,12 @@ All topics live under `lucid/agents/<agent_id>/components/led_strip/`.
 |-------|---------|-------------|
 | `cmd/reset` | `{"request_id": "..."}` | Stop effects, clear all LEDs |
 | `cmd/ping` | `{"request_id": "..."}` | Heartbeat check |
-| `cmd/cfg/set` | `{"request_id": "...", "set": {...}}` | Update configuration |
+| `cmd/clear` | `{"request_id": "..."}` | Turn off all LEDs (result on `evt/clear/result`) |
+| `cmd/cfg/set` | `{"request_id": "...", "set": {...}}` | Update configuration (brightness, strip counts, pins; brightness is runtime, hardware changes require restart) |
 
 ### Effect commands
 
-All effect commands follow:
+All effect commands use topic `cmd/effect/<name>` with payload:
 
 ```json
 { "request_id": "uuid", ...effect_params }
@@ -128,9 +129,7 @@ Results are published (non-retained, QoS 1) to `evt/effect/<name>/result`:
 
 | Topic | Parameters | Description |
 |-------|-----------|-------------|
-| `cmd/effect/clear` | — | Turn off all LEDs |
 | `cmd/effect/set-color` | `color?: {r,g,b}` | Solid color (white if omitted) |
-| `cmd/effect/set-brightness` | `brightness: int` | Set brightness 0–255 |
 | `cmd/effect/set-range-percent` | `color, start_percent, end_percent` | Color by percentage range |
 | `cmd/effect/set-range-exact` | `color, start_index, end_index` | Color by LED index range |
 | `cmd/effect/glow` | `color?, wait_ms?` | Pulsing glow |
@@ -142,6 +141,14 @@ Results are published (non-retained, QoS 1) to `evt/effect/<name>/result`:
 | `cmd/effect/rainbow-cycle` | `wait_ms?` | Uniform rainbow |
 | `cmd/effect/theater-chase` | `color?, wait_ms?` | Theater chase (null color = rainbow) |
 | `cmd/effect/running` | `wait_ms?, width?` | Running light |
+
+Brightness is configured only via `cmd/cfg/set` with `set: {"brightness": 0-255}`.
+
+### Telemetry
+
+| Topic | Payload | Description |
+|-------|---------|-------------|
+| `telemetry/pixel_rgb` | `{"value": [[r,g,b], ...]}` | Current RGB for all pixels (published periodically when enabled) |
 
 ---
 
@@ -171,6 +178,9 @@ Published retained on `state`:
 ```bash
 TOPIC="lucid/agents/zepheros/components/led_strip"
 
+# Clear all LEDs
+mosquitto_pub -t "$TOPIC/cmd/clear" -m '{"request_id":"0"}'
+
 # Set all LEDs to white
 mosquitto_pub -t "$TOPIC/cmd/effect/set-color" \
   -m '{"request_id":"1"}'
@@ -183,6 +193,10 @@ mosquitto_pub -t "$TOPIC/cmd/effect/rainbow-cycle" \
 mosquitto_pub -t "$TOPIC/cmd/effect/glow" \
   -m '{"request_id":"3","color":{"r":0,"g":255,"b":0},"wait_ms":10}'
 
+# Set brightness via config (not an effect)
+mosquitto_pub -t "$TOPIC/cmd/cfg/set" \
+  -m '{"request_id":"cfg1","set":{"brightness":200}}'
+
 # Wave with 2 cycles
 mosquitto_pub -t "$TOPIC/cmd/effect/wave" \
   -m '{"request_id":"4","color":{"r":100,"g":0,"b":255},"cycles":2,"speed":0.1}'
@@ -190,10 +204,6 @@ mosquitto_pub -t "$TOPIC/cmd/effect/wave" \
 # Sparkle multicolor (omit color for random)
 mosquitto_pub -t "$TOPIC/cmd/effect/sparkle" \
   -m '{"request_id":"5","wait_ms":30}'
-
-# Set brightness to 200
-mosquitto_pub -t "$TOPIC/cmd/effect/set-brightness" \
-  -m '{"request_id":"6","brightness":200}'
 
 # Fade black → blue
 mosquitto_pub -t "$TOPIC/cmd/effect/color-fade" \
@@ -254,8 +264,8 @@ Tests stub out `rpi_ws281x` so they run without hardware. For full integration t
 | led_truss | lucid-component-led-strip |
 |-----------|--------------------------|
 | `POST /effects/rainbow-cycle` | `cmd/effect/rainbow-cycle` |
-| `POST /control/clear` | `cmd/effect/clear` or `cmd/reset` |
-| `POST /control/set-brightness` | `cmd/effect/set-brightness` |
+| `POST /control/clear` | `cmd/clear` or `cmd/reset` |
+| `POST /control/set-brightness` | `cmd/cfg/set` with `set: {"brightness": n}` |
 | `GET /effects` | `metadata` retained topic (capabilities list) |
 | Bitcoin effect | Removed (external dependency) |
 | Heart rate effect | Removed (Playwright dependency) |

@@ -20,6 +20,7 @@ CMD_SET_RANGE_PERCENT = "set_range_percent"
 CMD_SET_RANGE_EXACT = "set_range_exact"
 CMD_EFFECT = "effect"
 CMD_PING = "ping"
+CMD_GET_PIXELS = "get_pixels"
 
 # Default socket path (override with LUCID_LED_STRIP_SOCKET)
 DEFAULT_SOCKET_PATH = "/run/lucid/led-strip.sock"

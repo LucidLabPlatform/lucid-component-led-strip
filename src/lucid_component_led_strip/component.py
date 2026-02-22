@@ -3,8 +3,9 @@ LEDStripComponent — LUCID component for WS281x LED strip control.
 
 Talks to the root-owned LED helper daemon over Unix socket (see protocol.py).
 Publishes retained: metadata, status, state, cfg.
-Custom effect commands: cmd/effect/<name> → evt/effect/<name>/result.
-Standard commands: cmd/reset, cmd/ping, cmd/cfg/set.
+Commands: cmd/reset, cmd/ping, cmd/clear (→ evt/clear/result), cmd/cfg/set.
+Effect commands: cmd/effect/<name> → evt/effect/<name>/result.
+Telemetry: pixel_rgb (array of current [r,g,b] per pixel).
 
 Hardware defaults match the OptiTrack truss installation:
   Strip 1: 896 LEDs on GPIO18   Strip 2: 894 LEDs on GPIO13
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -40,11 +42,10 @@ class LEDStripComponent(Component):
     parameters. All results are published to evt/effect/<name>/result.
     """
 
-    # Effect names registered as LUCID capabilities
+    # Command/effect names registered as LUCID capabilities (cmd/clear, cmd/effect/<name>)
     EFFECT_CAPABILITIES = [
-        "effect/clear",
+        "clear",
         "effect/set-color",
-        "effect/set-brightness",
         "effect/set-range-percent",
         "effect/set-range-exact",
         "effect/glow",
@@ -78,6 +79,9 @@ class LEDStripComponent(Component):
 
         self._hardware_initialized = False
         self._current_effect: str | None = None
+        self._pixel_telemetry_stop = threading.Event()
+        self._pixel_telemetry_thread: threading.Thread | None = None
+        self._pixel_telemetry_interval_s = 5
 
     # ------------------------------------------------------------------
     # LUCID contract
@@ -117,10 +121,11 @@ class LEDStripComponent(Component):
         if result.get("ok"):
             self._hardware_initialized = True
             self._log.info(
-                "LED helper initialized: %d LEDs (strip1=%d GPIO%d, strip2=%d GPIO%d)",
+                "LED helper initialized: %d LEDs (strip1=%d GPIO%d, strip2=%d GPIO%d), brightness=%d",
                 self._strip1_count + self._strip2_count,
                 self._strip1_count, self._strip1_pin,
                 self._strip2_count, self._strip2_pin,
+                self._brightness,
             )
         else:
             self._hardware_initialized = False
@@ -129,16 +134,52 @@ class LEDStripComponent(Component):
         self._publish_all_retained()
 
     def _stop(self) -> None:
+        self._stop_pixel_telemetry()
         led_client.reset()
         self._current_effect = None
         self._log.info("Stopped component: %s", self.component_id)
+
+    def _pixel_telemetry_loop(self) -> None:
+        while not self._pixel_telemetry_stop.wait(timeout=self._pixel_telemetry_interval_s):
+            if not self._hardware_initialized:
+                continue
+            try:
+                result = led_client.get_pixels()
+                if result.get("ok") and "pixels" in result:
+                    self.publish_telemetry("pixel_rgb", result["pixels"])
+                    self._log.debug("Published pixel_rgb telemetry (%d pixels)", len(result["pixels"]))
+            except Exception as e:
+                self._log.debug("pixel_rgb telemetry failed: %s", e)
+
+    def _start_pixel_telemetry(self) -> None:
+        if self._pixel_telemetry_thread is not None:
+            return
+        self._pixel_telemetry_stop.clear()
+        self._pixel_telemetry_thread = threading.Thread(
+            target=self._pixel_telemetry_loop,
+            daemon=True,
+            name="led-strip-pixel-telemetry",
+        )
+        self._pixel_telemetry_thread.start()
+        self._log.debug("Started pixel_rgb telemetry thread (interval=%ss)", self._pixel_telemetry_interval_s)
+
+    def _stop_pixel_telemetry(self) -> None:
+        self._pixel_telemetry_stop.set()
+        if self._pixel_telemetry_thread is not None:
+            self._pixel_telemetry_thread.join(timeout=2.0)
+            self._pixel_telemetry_thread = None
 
     def _publish_all_retained(self) -> None:
         self.publish_metadata()
         self.publish_status()
         self.publish_state()
-        self.set_telemetry_config({"metrics": {}})
+        self.set_telemetry_config({
+            "metrics": {
+                "pixel_rgb": {"enabled": True, "interval_s": self._pixel_telemetry_interval_s, "change_threshold_percent": 0.0},
+            }
+        })
         self.publish_cfg()
+        self._start_pixel_telemetry()
 
     # ------------------------------------------------------------------
     # Standard commands
@@ -151,10 +192,12 @@ class LEDStripComponent(Component):
         except json.JSONDecodeError:
             request_id = ""
 
+        self._log.info("cmd/reset request_id=%s", request_id)
         result = led_client.reset()
         self._current_effect = None
         self.publish_state()
         self.publish_result("reset", request_id, ok=result.get("ok", True), error=result.get("error"))
+        self._log.debug("cmd/reset result ok=%s", result.get("ok", True))
 
     def on_cmd_ping(self, payload_str: str) -> None:
         try:
@@ -162,6 +205,7 @@ class LEDStripComponent(Component):
             request_id = payload.get("request_id", "")
         except json.JSONDecodeError:
             request_id = ""
+        self._log.info("cmd/ping request_id=%s hardware_initialized=%s", request_id, self._hardware_initialized)
         if self._hardware_initialized:
             led_client.set_color({"r": 255, "g": 0, "b": 0})
             time.sleep(0.2)
@@ -178,6 +222,7 @@ class LEDStripComponent(Component):
             request_id = ""
             set_dict = {}
 
+        self._log.info("cmd/cfg/set request_id=%s set_keys=%s", request_id, list(set_dict.keys()) if isinstance(set_dict, dict) else None)
         if not isinstance(set_dict, dict):
             self.publish_cfg_set_result(
                 request_id=request_id,
@@ -248,20 +293,22 @@ class LEDStripComponent(Component):
     # Effect command handlers
     # ------------------------------------------------------------------
 
-    def on_cmd_effect_clear(self, payload_str: str) -> None:
+    def on_cmd_clear(self, payload_str: str) -> None:
         try:
             payload = json.loads(payload_str) if payload_str else {}
             request_id = payload.get("request_id", "")
         except json.JSONDecodeError:
             request_id = ""
 
+        self._log.info("cmd/clear request_id=%s", request_id)
         if not self._require_hardware():
-            self._publish_effect_result("clear", request_id, ok=False, error="hardware not initialized")
+            self._publish_result("clear", request_id, ok=False, error="hardware not initialized")
             return
         result = led_client.clear()
         self._current_effect = None
         self.publish_state()
-        self._publish_effect_result("clear", request_id, ok=result.get("ok", True), error=result.get("error"))
+        self.publish_result("clear", request_id, ok=result.get("ok", True), error=result.get("error"))
+        self._log.debug("cmd/clear result ok=%s", result.get("ok", True))
 
     def on_cmd_effect_set_color(self, payload_str: str) -> None:
         try:
@@ -270,6 +317,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("set-color", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/set-color request_id=%s color=%s", request_id, params.get("color"))
         if not self._require_hardware():
             self._publish_effect_result("set-color", request_id, ok=False, error="hardware not initialized")
             return
@@ -280,23 +328,7 @@ class LEDStripComponent(Component):
         self._current_effect = None
         self.publish_state()
         self._publish_effect_result("set-color", request_id, ok=result.get("ok", True), error=result.get("error"))
-
-    def on_cmd_effect_set_brightness(self, payload_str: str) -> None:
-        try:
-            request_id, params = self._parse_effect_payload(payload_str)
-        except (json.JSONDecodeError, ValueError):
-            self._publish_effect_result("set-brightness", "", ok=False, error="invalid JSON")
-            return
-
-        if not self._require_hardware():
-            self._publish_effect_result("set-brightness", request_id, ok=False, error="hardware not initialized")
-            return
-
-        brightness = _clamp(int(params.get("brightness", 125)), 0, 255)
-        self._brightness = brightness
-        result = led_client.set_brightness(brightness)
-        self.publish_state()
-        self._publish_effect_result("set-brightness", request_id, ok=result.get("ok", True), error=result.get("error"))
+        self._log.debug("cmd/effect/set-color result ok=%s", result.get("ok", True))
 
     def on_cmd_effect_set_range_percent(self, payload_str: str) -> None:
         try:
@@ -305,6 +337,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("set-range-percent", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/set-range-percent request_id=%s start_percent=%s end_percent=%s", request_id, params.get("start_percent"), params.get("end_percent"))
         if not self._require_hardware():
             self._publish_effect_result("set-range-percent", request_id, ok=False, error="hardware not initialized")
             return
@@ -326,6 +359,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("set-range-exact", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/set-range-exact request_id=%s start_index=%s end_index=%s", request_id, params.get("start_index"), params.get("end_index"))
         if not self._require_hardware():
             self._publish_effect_result("set-range-exact", request_id, ok=False, error="hardware not initialized")
             return
@@ -348,6 +382,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("glow", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/glow request_id=%s wait_ms=%s", request_id, params.get("wait_ms"))
         if not self._require_hardware():
             self._publish_effect_result("glow", request_id, ok=False, error="hardware not initialized")
             return
@@ -366,6 +401,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("wave", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/wave request_id=%s cycles=%s speed=%s", request_id, params.get("cycles"), params.get("speed"))
         if not self._require_hardware():
             self._publish_effect_result("wave", request_id, ok=False, error="hardware not initialized")
             return
@@ -389,6 +425,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("color-wipe", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/color-wipe request_id=%s wait_ms=%s", request_id, params.get("wait_ms"))
         if not self._require_hardware():
             self._publish_effect_result("color-wipe", request_id, ok=False, error="hardware not initialized")
             return
@@ -407,6 +444,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("color-fade", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/color-fade request_id=%s steps=%s", request_id, params.get("steps"))
         if not self._require_hardware():
             self._publish_effect_result("color-fade", request_id, ok=False, error="hardware not initialized")
             return
@@ -430,6 +468,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("sparkle", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/sparkle request_id=%s cumulative=%s", request_id, params.get("cumulative"))
         if not self._require_hardware():
             self._publish_effect_result("sparkle", request_id, ok=False, error="hardware not initialized")
             return
@@ -452,6 +491,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("rainbow", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/rainbow request_id=%s wait_ms=%s", request_id, params.get("wait_ms"))
         if not self._require_hardware():
             self._publish_effect_result("rainbow", request_id, ok=False, error="hardware not initialized")
             return
@@ -469,6 +509,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("rainbow-cycle", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/rainbow-cycle request_id=%s wait_ms=%s", request_id, params.get("wait_ms"))
         if not self._require_hardware():
             self._publish_effect_result("rainbow-cycle", request_id, ok=False, error="hardware not initialized")
             return
@@ -486,6 +527,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("theater-chase", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/theater-chase request_id=%s wait_ms=%s", request_id, params.get("wait_ms"))
         if not self._require_hardware():
             self._publish_effect_result("theater-chase", request_id, ok=False, error="hardware not initialized")
             return
@@ -504,6 +546,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("running", "", ok=False, error="invalid JSON")
             return
 
+        self._log.info("cmd/effect/running request_id=%s wait_ms=%s width=%s", request_id, params.get("wait_ms"), params.get("width"))
         if not self._require_hardware():
             self._publish_effect_result("running", request_id, ok=False, error="hardware not initialized")
             return

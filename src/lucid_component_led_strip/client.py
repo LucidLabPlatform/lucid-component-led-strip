@@ -15,6 +15,7 @@ from typing import Any
 from .protocol import (
     CMD_CLEAR,
     CMD_EFFECT,
+    CMD_GET_PIXELS,
     CMD_INIT,
     CMD_PING,
     CMD_RESET,
@@ -131,3 +132,8 @@ def effect(name: str, params: dict[str, Any] | None = None) -> dict:
 def ping() -> dict:
     """Check if helper is reachable and hardware is initialized. Returns {ok: bool, error?: str}."""
     return _request(CMD_PING)
+
+
+def get_pixels() -> dict:
+    """Return current pixel buffer. Returns {ok: bool, pixels?: list of [r,g,b], error?: str}."""
+    return _request(CMD_GET_PIXELS)

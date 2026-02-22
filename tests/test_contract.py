@@ -95,9 +95,8 @@ def test_capabilities_includes_standard_and_effects():
     assert "ping" in caps
 
     expected_effects = [
-        "effect/clear",
+        "clear",
         "effect/set-color",
-        "effect/set-brightness",
         "effect/set-range-percent",
         "effect/set-range-exact",
         "effect/glow",
@@ -167,11 +166,11 @@ def test_start_stop_state_transitions():
 def test_hardware_initialized_after_start():
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
-
-    comp.start()
-    state = comp.get_state_payload()
-    assert state["hardware_initialized"] is True
-
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        comp.start()
+        state = comp.get_state_payload()
+        assert state["hardware_initialized"] is True
     comp.stop()
 
 
@@ -192,6 +191,27 @@ def test_on_cmd_ping():
     comp.stop()
 
 
+def test_on_cmd_clear():
+    import json
+    ctx = _fake_context()
+    comp = LEDStripComponent(ctx)
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.clear.return_value = {"ok": True}
+        comp._hardware_initialized = True
+
+        published = []
+        comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
+
+        comp.on_cmd_clear(json.dumps({"request_id": "clear-001"}))
+
+        result_topics = [t for t, _ in published if "evt/clear/result" in t]
+        assert result_topics, "Expected clear result on evt/clear/result"
+        results = [json.loads(p) for t, p in published if "evt/clear/result" in t]
+        assert results[0]["ok"] is True
+        assert results[0]["request_id"] == "clear-001"
+        assert comp._current_effect is None
+
+
 def test_on_cmd_reset():
     import json
     ctx = _fake_context()
@@ -205,7 +225,7 @@ def test_on_cmd_reset():
 
     result_topics = [t for t, _ in published if "evt/reset/result" in t]
     assert result_topics, "Expected reset result to be published"
-    assert comp._orchestrator.current_effect is None
+    assert comp._current_effect is None
 
     comp.stop()
 
@@ -245,19 +265,22 @@ def test_effect_result_published_when_hardware_ready():
     import json
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
-    comp.start()
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        mock_client.effect.return_value = {"ok": True}
+        comp.start()
 
-    published = []
-    comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
+        published = []
+        comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
 
-    comp.on_cmd_effect_rainbow(json.dumps({"request_id": "fx-001", "wait_ms": 50}))
+        comp.on_cmd_effect_rainbow(json.dumps({"request_id": "fx-001", "wait_ms": 50}))
 
-    result_topics = [t for t, _ in published if "evt/effect/rainbow/result" in t]
-    assert result_topics, "Expected rainbow effect result to be published"
+        result_topics = [t for t, _ in published if "evt/effect/rainbow/result" in t]
+        assert result_topics, "Expected rainbow effect result to be published"
 
-    results = [json.loads(p) for t, p in published if "evt/effect/rainbow/result" in t]
-    assert results[0]["ok"] is True
-    assert results[0]["request_id"] == "fx-001"
+        results = [json.loads(p) for t, p in published if "evt/effect/rainbow/result" in t]
+        assert results[0]["ok"] is True
+        assert results[0]["request_id"] == "fx-001"
 
     comp.stop()
 
@@ -266,17 +289,21 @@ def test_orchestrator_tracks_current_effect():
     import json
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
-    comp.start()
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        mock_client.effect.return_value = {"ok": True}
+        mock_client.reset.return_value = {"ok": True}
+        comp.start()
 
-    comp.on_cmd_effect_glow(json.dumps({
-        "request_id": "fx-002",
-        "color": {"r": 0, "g": 255, "b": 0},
-        "wait_ms": 10,
-    }))
+        comp.on_cmd_effect_glow(json.dumps({
+            "request_id": "fx-002",
+            "color": {"r": 0, "g": 255, "b": 0},
+            "wait_ms": 10,
+        }))
 
-    assert comp._orchestrator.current_effect == "glow"
+        assert comp._current_effect == "glow"
 
-    comp.on_cmd_reset(json.dumps({"request_id": "r-001"}))
-    assert comp._orchestrator.current_effect is None
+        comp.on_cmd_reset(json.dumps({"request_id": "r-001"}))
+        assert comp._current_effect is None
 
     comp.stop()
