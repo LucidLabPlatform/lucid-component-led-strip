@@ -212,6 +212,24 @@ def test_on_cmd_clear():
         assert comp._current_effect is None
 
 
+def test_on_cmd_clear_without_hardware_publishes_error_result():
+    import json
+    ctx = _fake_context()
+    comp = LEDStripComponent(ctx)
+    comp._hardware_initialized = False
+
+    published = []
+    comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
+
+    comp.on_cmd_clear(json.dumps({"request_id": "clear-002"}))
+
+    results = [json.loads(p) for t, p in published if "evt/clear/result" in t]
+    assert results, "Expected clear result on evt/clear/result"
+    assert results[0]["ok"] is False
+    assert results[0]["request_id"] == "clear-002"
+    assert results[0]["error"] == "hardware not initialized"
+
+
 def test_on_cmd_reset():
     import json
     ctx = _fake_context()

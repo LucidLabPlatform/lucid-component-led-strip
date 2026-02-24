@@ -64,6 +64,7 @@ class LEDStripComponent(Component):
     def __init__(self, context: ComponentContext) -> None:
         super().__init__(context)
         self._log = context.logger()
+        self._logs_enabled = True
 
         # context.config may be AgentConfig (no .get) or a dict-like; use dict-like only
         raw = context.config
@@ -306,7 +307,7 @@ class LEDStripComponent(Component):
 
         self._log.info("cmd/clear request_id=%s", request_id)
         if not self._require_hardware():
-            self._publish_result("clear", request_id, ok=False, error="hardware not initialized")
+            self.publish_result("clear", request_id, ok=False, error="hardware not initialized")
             return
         result = led_client.clear()
         self._current_effect = None
