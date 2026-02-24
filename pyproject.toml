@@ -18,7 +18,7 @@ dependencies = [
 dev = ["pytest"]
 pi = ["numpy>=2.0.0", "rpi-ws281x>=5.0.0"]
 
-[project.entry-points."lucid.components"]
+[project.entry-points."lucid_components"]
 led_strip = "lucid_component_led_strip.component:LEDStripComponent"
 
 [project.scripts]

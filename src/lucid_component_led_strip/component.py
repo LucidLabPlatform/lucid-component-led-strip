@@ -64,7 +64,6 @@ class LEDStripComponent(Component):
     def __init__(self, context: ComponentContext) -> None:
         super().__init__(context)
         self._log = context.logger()
-        self._logs_enabled = True
 
         # context.config may be AgentConfig (no .get) or a dict-like; use dict-like only
         raw = context.config
@@ -96,6 +95,15 @@ class LEDStripComponent(Component):
 
     def capabilities(self) -> list[str]:
         return ["reset", "ping"] + self.EFFECT_CAPABILITIES
+
+    def get_cfg_payload(self) -> dict[str, Any]:
+        return {
+            "brightness": self._brightness,
+            "strip1_count": self._strip1_count,
+            "strip2_count": self._strip2_count,
+            "strip1_pin": self._strip1_pin,
+            "strip2_pin": self._strip2_pin,
+        }
 
     def get_state_payload(self) -> dict[str, Any]:
         return {
@@ -239,11 +247,9 @@ class LEDStripComponent(Component):
         applied: dict[str, Any] = {}
         restart_required = False
 
-        if "logs_enabled" in set_dict:
-            self._logs_enabled = bool(set_dict["logs_enabled"])
-            applied["logs_enabled"] = self._logs_enabled
-            if self._logs_enabled:
-                self._log.info("Logs enabled via cmd/cfg/set")
+        if "log_level" in set_dict:
+            self.apply_log_level(str(set_dict["log_level"]))
+            applied["log_level"] = self._log_level
 
         # Runtime-applicable config
         if "brightness" in set_dict:
