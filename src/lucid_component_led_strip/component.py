@@ -7,7 +7,7 @@ Commands: cmd/reset, cmd/ping, cmd/clear (→ evt/clear/result), cmd/cfg/set.
 Effect commands: cmd/effect/<name> → evt/effect/<name>/result.
 Telemetry: pixel_rgb (array of current [r,g,b] per pixel).
 
-Hardware defaults match the OptiTrack truss installation:
+Hardware defaults match the current OptiTrack truss installation of floor T5:
   Strip 1: 896 LEDs on GPIO18   Strip 2: 894 LEDs on GPIO13
   Total: 1790 LEDs, 800 kHz, DMA 10, initial brightness 125.
 """
@@ -20,7 +20,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from lucid_component_base import Component, ComponentContext
+from lucid_component_base import Component, ComponentContext, ComponentStatus
 
 from . import client as led_client
 
@@ -31,6 +31,15 @@ def _utc_iso() -> str:
 
 def _clamp(value: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, value))
+
+
+_IPC_ERROR_MARKERS = ("[Errno ", "connection closed")
+
+
+def _is_ipc_failure(error: str | None) -> bool:
+    if not error:
+        return False
+    return any(m in error for m in _IPC_ERROR_MARKERS)
 
 
 class LEDStripComponent(Component):
@@ -45,7 +54,7 @@ class LEDStripComponent(Component):
     # Command/effect names registered as LUCID capabilities.
     # Top-level commands (no effect/ prefix): clear, set-color, set-range-*.
     # Effects (streaming, looping): effect/<name>.
-    EFFECT_CAPABILITIES = [
+    CAPABILITIES = [
         "clear",
         "set-color",
         "set-range-percent",
@@ -65,12 +74,7 @@ class LEDStripComponent(Component):
         super().__init__(context)
         self._log = context.logger()
 
-        # context.config may be AgentConfig (no .get) or a dict-like; use dict-like only
-        raw = context.config
-        if isinstance(raw, dict) or (hasattr(raw, "get") and callable(getattr(raw, "get"))):
-            cfg = raw
-        else:
-            cfg = {}
+        cfg = context.config
 
         # Hardware configuration — defaults match the truss installation.
         self._strip1_count: int = int(cfg.get("strip1_count", 896))
@@ -94,7 +98,7 @@ class LEDStripComponent(Component):
         return "led_strip"
 
     def capabilities(self) -> list[str]:
-        return ["reset", "ping"] + self.EFFECT_CAPABILITIES
+        return ["reset", "ping"] + self.CAPABILITIES
 
     def get_cfg_payload(self) -> dict[str, Any]:
         return {
@@ -121,6 +125,13 @@ class LEDStripComponent(Component):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def _signal_hardware_failed(self, error: str) -> None:
+        """Transition to FAILED state and publish; called on any runtime IPC failure."""
+        self._hardware_initialized = False
+        self._state.last_error = error
+        self._set_state(ComponentStatus.FAILED)
+        self.publish_state()
+
     def _start(self) -> None:
         result = led_client.init(
             strip1_count=self._strip1_count,
@@ -140,7 +151,10 @@ class LEDStripComponent(Component):
             )
         else:
             self._hardware_initialized = False
-            self._log.error("LED helper init failed: %s", result.get("error", "unknown"))
+            error_msg = result.get("error", "unknown")
+            self._log.error("LED helper init failed: %s", error_msg)
+            self._publish_all_retained()
+            raise RuntimeError(f"LED helper init failed: {error_msg}")
 
         self._publish_all_retained()
 
@@ -148,6 +162,7 @@ class LEDStripComponent(Component):
         self._stop_pixel_telemetry()
         led_client.reset()
         self._current_effect = None
+        self._hardware_initialized = False
         self._log.info("Stopped component: %s", self.component_id)
 
     def _pixel_telemetry_loop(self) -> None:
@@ -159,6 +174,9 @@ class LEDStripComponent(Component):
                 if result.get("ok") and "pixels" in result:
                     self.publish_telemetry("pixel_rgb", result["pixels"])
                     self._log.debug("Published pixel_rgb telemetry (%d pixels)", len(result["pixels"]))
+                elif not result.get("ok") and _is_ipc_failure(result.get("error")):
+                    self._log.error("pixel_rgb telemetry IPC failure: %s", result.get("error"))
+                    self._signal_hardware_failed(result.get("error", "IPC failure"))
             except Exception as e:
                 self._log.debug("pixel_rgb telemetry failed: %s", e)
 
@@ -185,12 +203,16 @@ class LEDStripComponent(Component):
         self.publish_status()
         self.publish_state()
         self.set_telemetry_config({
-            "metrics": {
-                "pixel_rgb": {"enabled": True, "interval_s": self._pixel_telemetry_interval_s, "change_threshold_percent": 0.0},
-            }
+            "pixel_rgb": {"enabled": True, "interval_s": self._pixel_telemetry_interval_s, "change_threshold_percent": 0.0},
         })
         self.publish_cfg()
         self._start_pixel_telemetry()
+
+    def _flash_reset(self) -> None:
+        """Brief white flash then clear — visual confirmation of reset. Runs in a background thread."""
+        led_client.set_color({"r": 255, "g": 255, "b": 255})
+        time.sleep(0.2)
+        led_client.clear()
 
     # ------------------------------------------------------------------
     # Standard commands
@@ -205,10 +227,14 @@ class LEDStripComponent(Component):
 
         self._log.info("cmd/reset request_id=%s", request_id)
         result = led_client.reset()
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         self._current_effect = None
         self.publish_state()
         self.publish_result("reset", request_id, ok=result.get("ok", True), error=result.get("error"))
         self._log.debug("cmd/reset result ok=%s", result.get("ok", True))
+        if result.get("ok") and self._hardware_initialized:
+            threading.Thread(target=self._flash_reset, daemon=True).start()
 
     def on_cmd_ping(self, payload_str: str) -> None:
         try:
@@ -217,11 +243,6 @@ class LEDStripComponent(Component):
         except json.JSONDecodeError:
             request_id = ""
         self._log.info("cmd/ping request_id=%s hardware_initialized=%s", request_id, self._hardware_initialized)
-        if self._hardware_initialized:
-            led_client.set_color({"r": 255, "g": 0, "b": 0})
-            time.sleep(0.2)
-            led_client.clear()
-            self.publish_state()
         self.publish_result("ping", request_id, ok=True, error=None)
 
     def on_cmd_cfg_set(self, payload_str: str) -> None:
@@ -230,8 +251,8 @@ class LEDStripComponent(Component):
             request_id = payload.get("request_id", "")
             set_dict = payload.get("set") or {}
         except json.JSONDecodeError:
-            request_id = ""
-            set_dict = {}
+            self.publish_cfg_set_result(request_id="", ok=False, applied=None, error="invalid JSON", ts=_utc_iso())
+            return
 
         self._log.info("cmd/cfg/set request_id=%s set_keys=%s", request_id, list(set_dict.keys()) if isinstance(set_dict, dict) else None)
         if not isinstance(set_dict, dict):
@@ -258,7 +279,10 @@ class LEDStripComponent(Component):
             if self._hardware_initialized:
                 r = led_client.set_brightness(self._brightness)
                 if not r.get("ok"):
-                    applied["brightness_error"] = r.get("error")
+                    if _is_ipc_failure(r.get("error")):
+                        self._signal_hardware_failed(r.get("error", "IPC failure"))
+                    else:
+                        applied["brightness_error"] = r.get("error")
 
         # Hardware config — requires restart to take effect
         for key in ("strip1_count", "strip2_count", "strip1_pin", "strip2_pin"):
@@ -316,6 +340,8 @@ class LEDStripComponent(Component):
             self.publish_result("clear", request_id, ok=False, error="hardware not initialized")
             return
         result = led_client.clear()
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         self._current_effect = None
         self.publish_state()
         self.publish_result("clear", request_id, ok=result.get("ok", True), error=result.get("error"))
@@ -336,6 +362,8 @@ class LEDStripComponent(Component):
         color_dict = params.get("color")
         color = None if not color_dict else {"r": int(color_dict["r"]), "g": int(color_dict["g"]), "b": int(color_dict["b"])}
         result = led_client.set_color(color)
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         self._current_effect = None
         self.publish_state()
         self.publish_result("set-color", request_id, ok=result.get("ok", True), error=result.get("error"))
@@ -359,6 +387,8 @@ class LEDStripComponent(Component):
             float(params.get("start_percent", 0.0)),
             float(params.get("end_percent", 1.0)),
         )
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         self._current_effect = None
         self.publish_state()
         self.publish_result("set-range-percent", request_id, ok=result.get("ok", True), error=result.get("error"))
@@ -382,6 +412,8 @@ class LEDStripComponent(Component):
             int(params.get("start_index", 0)),
             int(params.get("end_index", led_count)),
         )
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         self._current_effect = None
         self.publish_state()
         self.publish_result("set-range-exact", request_id, ok=result.get("ok", True), error=result.get("error"))
@@ -401,6 +433,8 @@ class LEDStripComponent(Component):
         color_dict = params.get("color", {"r": 255, "g": 255, "b": 255})
         led_client.stop_effect()
         result = led_client.effect("glow", {"color": color_dict, "wait_ms": params.get("wait_ms", 10)})
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "glow"
         self.publish_state()
@@ -426,6 +460,8 @@ class LEDStripComponent(Component):
             "speed": params.get("speed", 0.1),
             "wait_ms": params.get("wait_ms", 10),
         })
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "wave"
         self.publish_state()
@@ -446,6 +482,8 @@ class LEDStripComponent(Component):
         color_dict = params.get("color", {"r": 255, "g": 255, "b": 255})
         led_client.stop_effect()
         result = led_client.effect("color-wipe", {"color": color_dict, "wait_ms": params.get("wait_ms", 50)})
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "color-wipe"
         self.publish_state()
@@ -471,6 +509,8 @@ class LEDStripComponent(Component):
             "wait_ms": params.get("wait_ms", 20),
             "steps": params.get("steps", 100),
         })
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "color-fade"
         self.publish_state()
@@ -495,6 +535,8 @@ class LEDStripComponent(Component):
             "wait_ms": params.get("wait_ms", 50),
             "cumulative": params.get("cumulative", False),
         })
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "sparkle"
         self.publish_state()
@@ -514,6 +556,8 @@ class LEDStripComponent(Component):
 
         led_client.stop_effect()
         result = led_client.effect("rainbow", {"wait_ms": params.get("wait_ms", 50)})
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "rainbow"
         self.publish_state()
@@ -533,6 +577,8 @@ class LEDStripComponent(Component):
 
         led_client.stop_effect()
         result = led_client.effect("rainbow-cycle", {"wait_ms": params.get("wait_ms", 50)})
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "rainbow-cycle"
         self.publish_state()
@@ -553,6 +599,8 @@ class LEDStripComponent(Component):
         color_dict = params.get("color")  # None → multicolor
         led_client.stop_effect()
         result = led_client.effect("theater-chase", {"color": color_dict, "wait_ms": params.get("wait_ms", 50)})
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "theater-chase"
         self.publish_state()
@@ -572,6 +620,8 @@ class LEDStripComponent(Component):
 
         led_client.stop_effect()
         result = led_client.effect("running", {"wait_ms": params.get("wait_ms", 10), "width": params.get("width", 1)})
+        if not result.get("ok") and _is_ipc_failure(result.get("error")):
+            self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
             self._current_effect = "running"
         self.publish_state()

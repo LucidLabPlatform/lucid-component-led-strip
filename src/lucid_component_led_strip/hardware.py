@@ -102,8 +102,9 @@ class LEDStripHardware:
 
     def set_pixel_color(self, pixel_index: int, color: Any) -> None:
         """Set a single pixel by logical ring index."""
-        if 0 <= pixel_index < self.LED_COUNT:
-            self._pixel_buffer[pixel_index] = list(self._color_to_rgb(color))
+        if not (0 <= pixel_index < self.LED_COUNT):
+            return
+        self._pixel_buffer[pixel_index] = list(self._color_to_rgb(color))
         if pixel_index < self.STRIP1_COUNT:
             self._strip1.setPixelColor(pixel_index, color)
         else:

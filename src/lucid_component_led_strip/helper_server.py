@@ -102,61 +102,61 @@ class HelperState:
             self._orchestrator.stop()
 
     def set_brightness(self, value: int) -> None:
-        hw = self._hw()
-        if hw is None:
-            raise RuntimeError("hardware not initialized")
-        hw.set_brightness(value)
-        if self._config is not None:
-            self._config["brightness"] = value
+        with self._lock:
+            if self._hardware is None:
+                raise RuntimeError("hardware not initialized")
+            self._hardware.set_brightness(value)
+            if self._config is not None:
+                self._config["brightness"] = value
 
     def clear(self) -> None:
-        hw = self._hw()
-        if hw is None:
-            raise RuntimeError("hardware not initialized")
-        self._orchestrator.stop()
-        hw.clear_all()
+        with self._lock:
+            if self._hardware is None:
+                raise RuntimeError("hardware not initialized")
+            self._orchestrator.stop()
+            self._hardware.clear_all()
 
     def get_pixels(self) -> list[list[int]]:
         """Return current pixel buffer as list of [r,g,b] per pixel."""
-        hw = self._hw()
-        if hw is None:
-            raise RuntimeError("hardware not initialized")
-        return hw.get_pixel_buffer()
+        with self._lock:
+            if self._hardware is None:
+                raise RuntimeError("hardware not initialized")
+            return self._hardware.get_pixel_buffer()
 
     def set_color(self, color: dict | None) -> None:
         from rpi_ws281x import Color
-        hw = self._hw()
-        if hw is None:
-            raise RuntimeError("hardware not initialized")
-        self._orchestrator.stop()
-        if color:
-            hw.set_color_all(Color(int(color["r"]), int(color["g"]), int(color["b"])))
-        else:
-            hw.set_white_all()
+        with self._lock:
+            if self._hardware is None:
+                raise RuntimeError("hardware not initialized")
+            self._orchestrator.stop()
+            if color:
+                self._hardware.set_color_all(Color(int(color["r"]), int(color["g"]), int(color["b"])))
+            else:
+                self._hardware.set_white_all()
 
     def set_range_percent(self, color: dict, start_percent: float, end_percent: float) -> None:
         from rpi_ws281x import Color
-        hw = self._hw()
-        if hw is None:
-            raise RuntimeError("hardware not initialized")
-        self._orchestrator.stop()
-        hw.set_color_range_percent(
-            Color(int(color["r"]), int(color["g"]), int(color["b"])),
-            start_percent,
-            end_percent,
-        )
+        with self._lock:
+            if self._hardware is None:
+                raise RuntimeError("hardware not initialized")
+            self._orchestrator.stop()
+            self._hardware.set_color_range_percent(
+                Color(int(color["r"]), int(color["g"]), int(color["b"])),
+                start_percent,
+                end_percent,
+            )
 
     def set_range_exact(self, color: dict, start_index: int, end_index: int) -> None:
         from rpi_ws281x import Color
-        hw = self._hw()
-        if hw is None:
-            raise RuntimeError("hardware not initialized")
-        self._orchestrator.stop()
-        hw.set_color_range_exact(
-            Color(int(color["r"]), int(color["g"]), int(color["b"])),
-            start_index,
-            end_index,
-        )
+        with self._lock:
+            if self._hardware is None:
+                raise RuntimeError("hardware not initialized")
+            self._orchestrator.stop()
+            self._hardware.set_color_range_exact(
+                Color(int(color["r"]), int(color["g"]), int(color["b"])),
+                start_index,
+                end_index,
+            )
 
     def start_effect(self, name: str, params: dict) -> None:
         with self._lock:

@@ -38,14 +38,11 @@ Payload (publish to `lucid/agents/<agent_id>/cmd/components/install`):
 {
   "request_id": "<uuid>",
   "component_id": "led_strip",
-  "version": "1.0.0",
-  "entrypoint": "lucid_component_led_strip.component:LEDStripComponent",
   "source": {
     "type": "github_release",
     "owner": "YOUR_ORG",
     "repo": "lucid-component-led-strip",
-    "tag": "v1.0.0",
-    "asset": "lucid_component_led_strip-1.0.0-py3-none-any.whl",
+    "version": "1.0.0",
     "sha256": "<sha256-of-wheel>"
   }
 }
@@ -87,7 +84,7 @@ Default values match the truss installation. Override via `cmd/cfg/set`:
 | `strip2_count` | `894` | Requires component restart |
 | `strip1_pin` | `18` | Requires component restart |
 | `strip2_pin` | `13` | Requires component restart |
-| `logs_enabled` | `false` | Stream logs topic |
+| `log_level` | `ERROR` | Component log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`) |
 
 ---
 
@@ -177,7 +174,7 @@ Published retained on `state`:
 ## MQTT Examples
 
 ```bash
-TOPIC="lucid/agents/zepheros/components/led_strip"
+TOPIC="lucid/agents/{agent_id}/components/led_strip"
 
 # Clear all LEDs
 mosquitto_pub -t "$TOPIC/cmd/clear" -m '{"request_id":"0"}'

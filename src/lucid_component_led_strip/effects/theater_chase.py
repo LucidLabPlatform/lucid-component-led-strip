@@ -40,11 +40,11 @@ def run(
         for q in range(3):
             if cancel_event.is_set():
                 return
-            for i in range(0, hardware.LED_COUNT, 3):
+            for i in range(0, hardware.LED_COUNT - 2, 3):
                 pixel_color = hardware.wheel((i + j) % 255) if rainbow_mode else Color(r, g, b)
                 hardware.set_pixel_color(i + q, pixel_color)
             hardware.show()
             time.sleep(wait_ms / 1000.0)
-            for i in range(0, hardware.LED_COUNT, 3):
+            for i in range(0, hardware.LED_COUNT - 2, 3):
                 hardware.set_pixel_color(i + q, Color(0, 0, 0))
         j = (j + 1) % 256
