@@ -154,13 +154,15 @@ def test_start_stop_state_transitions():
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
 
-    comp.start()
-    assert comp.state.status == ComponentStatus.RUNNING
-    assert comp.state.started_at is not None
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        comp.start()
+        assert comp.state.status == ComponentStatus.RUNNING
+        assert comp.state.started_at is not None
 
-    comp.stop()
-    assert comp.state.status == ComponentStatus.STOPPED
-    assert comp.state.stopped_at is not None
+        comp.stop()
+        assert comp.state.status == ComponentStatus.STOPPED
+        assert comp.state.stopped_at is not None
 
 
 def test_hardware_initialized_after_start():
@@ -178,17 +180,19 @@ def test_on_cmd_ping():
     import json
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
-    comp.start()
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        comp.start()
 
-    published = []
-    comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
+        published = []
+        comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
 
-    comp.on_cmd_ping(json.dumps({"request_id": "ping-001"}))
+        comp.on_cmd_ping(json.dumps({"request_id": "ping-001"}))
 
-    result_topics = [t for t, _ in published if "evt/ping/result" in t]
-    assert result_topics, "Expected ping result to be published"
+        result_topics = [t for t, _ in published if "evt/ping/result" in t]
+        assert result_topics, "Expected ping result to be published"
 
-    comp.stop()
+        comp.stop()
 
 
 def test_on_cmd_clear():
@@ -234,49 +238,57 @@ def test_on_cmd_reset():
     import json
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
-    comp.start()
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        mock_client.reset.return_value = {"ok": True}
+        comp.start()
 
-    published = []
-    comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
+        published = []
+        comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
 
-    comp.on_cmd_reset(json.dumps({"request_id": "reset-001"}))
+        comp.on_cmd_reset(json.dumps({"request_id": "reset-001"}))
 
-    result_topics = [t for t, _ in published if "evt/reset/result" in t]
-    assert result_topics, "Expected reset result to be published"
-    assert comp._current_effect is None
+        result_topics = [t for t, _ in published if "evt/reset/result" in t]
+        assert result_topics, "Expected reset result to be published"
+        assert comp._current_effect is None
 
-    comp.stop()
+        comp.stop()
 
 
 def test_on_cmd_cfg_set_brightness():
     import json
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
-    comp.start()
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        mock_client.set_brightness.return_value = {"ok": True}
+        comp.start()
 
-    comp.on_cmd_cfg_set(json.dumps({
-        "request_id": "cfg-001",
-        "set": {"brightness": 200},
-    }))
+        comp.on_cmd_cfg_set(json.dumps({
+            "request_id": "cfg-001",
+            "set": {"brightness": 200},
+        }))
 
-    assert comp._brightness == 200
-    state = comp.get_state_payload()
-    assert state["brightness"] == 200
+        assert comp._brightness == 200
+        state = comp.get_state_payload()
+        assert state["brightness"] == 200
 
-    comp.stop()
+        comp.stop()
 
 
 def test_on_cmd_cfg_set_invalid_json():
     ctx = _fake_context()
     comp = LEDStripComponent(ctx)
-    comp.start()
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        comp.start()
 
-    published = []
-    comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
+        published = []
+        comp.context.mqtt.publish = lambda t, p, **kw: published.append((t, p))
 
-    comp.on_cmd_cfg_set("not json {{{")
+        comp.on_cmd_cfg_set("not json {{{")
 
-    comp.stop()
+        comp.stop()
 
 
 def test_effect_result_published_when_hardware_ready():
