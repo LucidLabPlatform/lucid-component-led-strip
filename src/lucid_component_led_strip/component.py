@@ -210,7 +210,7 @@ class LEDStripComponent(Component):
 
     def _flash_reset(self) -> None:
         """Brief white flash then clear — visual confirmation of reset. Runs in a background thread."""
-        led_client.set_color({"r": 255, "g": 255, "b": 255})
+        led_client.set_color({"r": 255, "g": 0, "b": 0})
         time.sleep(0.2)
         led_client.clear()
 
@@ -244,6 +244,8 @@ class LEDStripComponent(Component):
             request_id = ""
         self._log.info("cmd/ping request_id=%s hardware_initialized=%s", request_id, self._hardware_initialized)
         self.publish_result("ping", request_id, ok=True, error=None)
+        if self._hardware_initialized:
+            threading.Thread(target=self._flash_reset, daemon=True).start()
 
     def on_cmd_cfg_set(self, payload_str: str) -> None:
         try:
