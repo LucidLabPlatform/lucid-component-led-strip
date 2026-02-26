@@ -54,6 +54,7 @@ def _stub_rpi_ws281x():
 _stub_rpi_ws281x()
 
 from lucid_component_led_strip import LEDStripComponent  # noqa: E402
+from lucid_component_led_strip import helper_server  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +342,78 @@ def test_on_cmd_effect_running_forwards_color():
         )
 
     comp.stop()
+
+
+def _fake_effects_module() -> types.SimpleNamespace:
+    def _run(*_args, **_kwargs):
+        return None
+
+    effect_names = (
+        "glow",
+        "wave",
+        "color_wipe",
+        "color_fade",
+        "sparkle",
+        "rainbow",
+        "rainbow_cycle",
+        "theater_chase",
+        "running",
+    )
+    return types.SimpleNamespace(
+        **{name: types.SimpleNamespace(run=_run) for name in effect_names}
+    )
+
+
+def test_helper_sparkle_defaults_to_rainbow_when_color_omitted(monkeypatch: pytest.MonkeyPatch):
+    state = helper_server.HelperState()
+
+    class FakeOrchestrator:
+        def __init__(self):
+            self.kwargs = None
+
+        def start(self, _name, _fn, _hw, **kwargs):
+            self.kwargs = kwargs
+
+        def stop(self):
+            return None
+
+    orch = FakeOrchestrator()
+    state._hardware = object()
+    state._orchestrator = orch
+    monkeypatch.setattr(helper_server, "fx", _fake_effects_module())
+
+    state.start_effect("sparkle", {})
+
+    assert orch.kwargs is not None
+    assert orch.kwargs["r"] == -1
+    assert orch.kwargs["g"] == -1
+    assert orch.kwargs["b"] == -1
+
+
+def test_helper_sparkle_explicit_color_overrides_rainbow_default(monkeypatch: pytest.MonkeyPatch):
+    state = helper_server.HelperState()
+
+    class FakeOrchestrator:
+        def __init__(self):
+            self.kwargs = None
+
+        def start(self, _name, _fn, _hw, **kwargs):
+            self.kwargs = kwargs
+
+        def stop(self):
+            return None
+
+    orch = FakeOrchestrator()
+    state._hardware = object()
+    state._orchestrator = orch
+    monkeypatch.setattr(helper_server, "fx", _fake_effects_module())
+
+    state.start_effect("sparkle", {"color": {"r": 1, "g": 2, "b": 3}})
+
+    assert orch.kwargs is not None
+    assert orch.kwargs["r"] == 1
+    assert orch.kwargs["g"] == 2
+    assert orch.kwargs["b"] == 3
 
 
 def test_orchestrator_tracks_current_effect():

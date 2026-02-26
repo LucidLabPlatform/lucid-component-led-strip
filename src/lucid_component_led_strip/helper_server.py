@@ -168,7 +168,7 @@ class HelperState:
             "wave": (fx.wave.run, {"r": 255, "g": 255, "b": 255, "cycles": 1, "speed": 0.1, "wait_ms": 10}),
             "color-wipe": (fx.color_wipe.run, {"r": 255, "g": 255, "b": 255, "wait_ms": 50}),
             "color-fade": (fx.color_fade.run, {"wait_ms": 20, "steps": 100}),
-            "sparkle": (fx.sparkle.run, {"r": 255, "g": 255, "b": 255, "wait_ms": 50, "cumulative": False}),
+            "sparkle": (fx.sparkle.run, {"r": -1, "g": -1, "b": -1, "wait_ms": 50, "cumulative": False}),
             "rainbow": (fx.rainbow.run, {"wait_ms": 50}),
             "rainbow-cycle": (fx.rainbow_cycle.run, {"wait_ms": 50}),
             "theater-chase": (fx.theater_chase.run, {"r": 255, "g": 255, "b": 255, "wait_ms": 50}),

@@ -530,7 +530,7 @@ class LEDStripComponent(Component):
             self._publish_effect_result("sparkle", request_id, ok=False, error="hardware not initialized")
             return
 
-        color_dict = params.get("color")  # None → multicolor
+        color_dict = params.get("color")  # None/omitted -> rainbow (helper default)
         led_client.stop_effect()
         result = led_client.effect("sparkle", {
             "color": color_dict,

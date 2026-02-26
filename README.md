@@ -134,7 +134,7 @@ Results are published (non-retained, QoS 1) to `evt/effect/<name>/result`:
 | `cmd/effect/wave` | `color?, cycles?, speed?, wait_ms?` | Moving cosine waves |
 | `cmd/effect/color-wipe` | `color?, wait_ms?` | Pixel-by-pixel wipe |
 | `cmd/effect/color-fade` | `color_from?, color_to?, wait_ms?, steps?` | Fade between two colors |
-| `cmd/effect/sparkle` | `color?, wait_ms?, cumulative?` | Sparkles (null color = multicolor) |
+| `cmd/effect/sparkle` | `color?, wait_ms?, cumulative?` | Sparkles (omit/null color = rainbow) |
 | `cmd/effect/rainbow` | `wait_ms?` | Rainbow fade |
 | `cmd/effect/rainbow-cycle` | `wait_ms?` | Uniform rainbow |
 | `cmd/effect/theater-chase` | `color?, wait_ms?` | Theater chase (null color = rainbow) |
@@ -199,7 +199,7 @@ mosquitto_pub -t "$TOPIC/cmd/cfg/set" \
 mosquitto_pub -t "$TOPIC/cmd/effect/wave" \
   -m '{"request_id":"4","color":{"r":100,"g":0,"b":255},"cycles":2,"speed":0.1}'
 
-# Sparkle multicolor (omit color for random)
+# Sparkle rainbow/random colors (omit color)
 mosquitto_pub -t "$TOPIC/cmd/effect/sparkle" \
   -m '{"request_id":"5","wait_ms":30}'
 
