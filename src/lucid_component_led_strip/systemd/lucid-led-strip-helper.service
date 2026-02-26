@@ -3,6 +3,8 @@ Description=LUCID LED strip helper (root-owned, owns rpi_ws281x hardware)
 After=network-online.target
 # Start before agent so socket exists when component starts
 Before=lucid-agent-core.service
+# When agent-core stops/restarts, stop helper too (PartOf propagates stop/restart)
+PartOf=lucid-agent-core.service
 
 [Service]
 Type=simple

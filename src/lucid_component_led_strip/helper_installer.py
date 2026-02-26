@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 HELPER_SERVICE_NAME = "lucid-led-strip-helper"
 UNIT_DEST = Path(f"/etc/systemd/system/{HELPER_SERVICE_NAME}.service")
+DROPIN_DIR = Path("/etc/systemd/system/lucid-agent-core.service.d")
+DROPIN_FILE = DROPIN_DIR / "led-strip-helper.conf"
+DROPIN_CONTENT = "[Unit]\nWants=lucid-led-strip-helper.service\nAfter=lucid-led-strip-helper.service\n"
 
 
 def install_once() -> int:
@@ -31,8 +34,17 @@ def install_once() -> int:
             logger.error("Unit file not found: %s", unit_src)
             return 1
         shutil.copy2(unit_src, UNIT_DEST)
-    except Exception as e:
+    except Exception:
         logger.exception("Copy failed")
+        return 1
+
+    # Create agent-core drop-in so it Wants/After the helper (idempotent)
+    try:
+        DROPIN_DIR.mkdir(parents=True, exist_ok=True)
+        DROPIN_FILE.write_text(DROPIN_CONTENT)
+        logger.info("Wrote drop-in %s", DROPIN_FILE)
+    except Exception:
+        logger.exception("Failed to write agent-core drop-in")
         return 1
 
     for cmd in [
