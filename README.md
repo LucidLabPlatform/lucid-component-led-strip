@@ -138,7 +138,7 @@ Results are published (non-retained, QoS 1) to `evt/effect/<name>/result`:
 | `cmd/effect/rainbow` | `wait_ms?` | Rainbow fade |
 | `cmd/effect/rainbow-cycle` | `wait_ms?` | Uniform rainbow |
 | `cmd/effect/theater-chase` | `color?, wait_ms?` | Theater chase (null color = rainbow) |
-| `cmd/effect/running` | `wait_ms?, width?` | Running light |
+| `cmd/effect/running` | `color?, wait_ms?, width?` | Running light |
 
 Brightness is configured only via `cmd/cfg/set` with `set: {"brightness": 0-255}`. There is no `cmd/effect/set-brightness`.
 

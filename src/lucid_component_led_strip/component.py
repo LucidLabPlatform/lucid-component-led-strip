@@ -615,13 +615,34 @@ class LEDStripComponent(Component):
             self._publish_effect_result("running", "", ok=False, error="invalid JSON")
             return
 
-        self._log.info("cmd/effect/running request_id=%s wait_ms=%s width=%s", request_id, params.get("wait_ms"), params.get("width"))
+        self._log.info(
+            "cmd/effect/running request_id=%s wait_ms=%s width=%s color=%s",
+            request_id,
+            params.get("wait_ms"),
+            params.get("width"),
+            params.get("color"),
+        )
         if not self._require_hardware():
             self._publish_effect_result("running", request_id, ok=False, error="hardware not initialized")
             return
 
         led_client.stop_effect()
-        result = led_client.effect("running", {"wait_ms": params.get("wait_ms", 10), "width": params.get("width", 1)})
+        color_dict = params.get("color", {"r": 255, "g": 0, "b": 0})
+        if not isinstance(color_dict, dict):
+            color_dict = {"r": 255, "g": 0, "b": 0}
+        color_dict = {
+            "r": int(color_dict.get("r", 255)),
+            "g": int(color_dict.get("g", 255)),
+            "b": int(color_dict.get("b", 255)),
+        }
+        result = led_client.effect(
+            "running",
+            {
+                "color": color_dict,
+                "wait_ms": params.get("wait_ms", 10),
+                "width": params.get("width", 1),
+            },
+        )
         if not result.get("ok") and _is_ipc_failure(result.get("error")):
             self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):

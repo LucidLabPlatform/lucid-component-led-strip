@@ -315,6 +315,34 @@ def test_effect_result_published_when_hardware_ready():
     comp.stop()
 
 
+def test_on_cmd_effect_running_forwards_color():
+    import json
+    ctx = _fake_context()
+    comp = LEDStripComponent(ctx)
+    with patch("lucid_component_led_strip.component.led_client") as mock_client:
+        mock_client.init.return_value = {"ok": True}
+        mock_client.effect.return_value = {"ok": True}
+        comp.start()
+
+        comp.on_cmd_effect_running(json.dumps({
+            "request_id": "fx-run-001",
+            "color": {"r": 12, "g": 34, "b": 56},
+            "wait_ms": 15,
+            "width": 3,
+        }))
+
+        mock_client.effect.assert_called_with(
+            "running",
+            {
+                "color": {"r": 12, "g": 34, "b": 56},
+                "wait_ms": 15,
+                "width": 3,
+            },
+        )
+
+    comp.stop()
+
+
 def test_orchestrator_tracks_current_effect():
     import json
     ctx = _fake_context()
