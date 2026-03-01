@@ -100,6 +100,8 @@ All topics live under `lucid/agents/<agent_id>/components/led_strip/`.
 | `status` | Live status (online/offline) |
 | `state` | Hardware state snapshot (see State below) |
 | `cfg` | Active configuration |
+| `cfg/logging` | Logging configuration |
+| `cfg/telemetry` | Telemetry configuration |
 
 ### Standard commands
 
@@ -108,7 +110,9 @@ All topics live under `lucid/agents/<agent_id>/components/led_strip/`.
 | `cmd/reset` | `{"request_id": "..."}` | Stop effects, clear all LEDs |
 | `cmd/ping` | `{"request_id": "..."}` | Heartbeat check |
 | `cmd/clear` | `{"request_id": "..."}` | Turn off all LEDs (result on `evt/clear/result`) |
-| `cmd/cfg/set` | `{"request_id": "...", "set": {...}}` | Update configuration (brightness, strip counts, pins; brightness is runtime, hardware changes require restart) |
+| `cmd/cfg/set` | `{"request_id": "...", "set": {...}}` | Update `/cfg` keys (brightness, strip counts, pins; brightness is runtime, hardware changes require restart) |
+| `cmd/cfg/logging/set` | `{"request_id": "...", "set": {"log_level": "INFO"}}` | Update `/cfg/logging` keys |
+| `cmd/cfg/telemetry/set` | `{"request_id": "...", "set": {"pixel_rgb": {...}}}` | Update `/cfg/telemetry` keys |
 
 ### Effect commands
 

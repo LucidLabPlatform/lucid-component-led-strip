@@ -3,7 +3,8 @@ LEDStripComponent — LUCID component for WS281x LED strip control.
 
 Talks to the root-owned LED helper daemon over Unix socket (see protocol.py).
 Publishes retained: metadata, status, state, cfg.
-Commands: cmd/reset, cmd/ping, cmd/clear (→ evt/clear/result), cmd/cfg/set.
+Commands: cmd/reset, cmd/ping, cmd/clear (→ evt/clear/result),
+cmd/cfg/set, cmd/cfg/logging/set, cmd/cfg/telemetry/set.
 Effect commands: cmd/effect/<name> → evt/effect/<name>/result.
 Telemetry: pixel_rgb (array of current [r,g,b] per pixel).
 
@@ -248,33 +249,37 @@ class LEDStripComponent(Component):
             threading.Thread(target=self._flash_reset, daemon=True).start()
 
     def on_cmd_cfg_set(self, payload_str: str) -> None:
-        try:
-            payload = json.loads(payload_str) if payload_str else {}
-            request_id = payload.get("request_id", "")
-            set_dict = payload.get("set") or {}
-        except json.JSONDecodeError:
-            self.publish_cfg_set_result(request_id="", ok=False, applied=None, error="invalid JSON", ts=_utc_iso())
-            return
-
-        self._log.info("cmd/cfg/set request_id=%s set_keys=%s", request_id, list(set_dict.keys()) if isinstance(set_dict, dict) else None)
-        if not isinstance(set_dict, dict):
+        request_id, set_dict, parse_error = self._parse_cfg_set_payload(payload_str)
+        if parse_error:
             self.publish_cfg_set_result(
                 request_id=request_id,
                 ok=False,
                 applied=None,
-                error="payload 'set' must be an object",
+                error=parse_error,
                 ts=_utc_iso(),
+                action="cfg/set",
             )
             return
+
+        self._log.info("cmd/cfg/set request_id=%s set_keys=%s", request_id, list(set_dict.keys()))
 
         applied: dict[str, Any] = {}
         restart_required = False
 
-        if "log_level" in set_dict:
-            self.apply_log_level(str(set_dict["log_level"]))
-            applied["log_level"] = self._log_level
+        allowed_keys = {"brightness", "strip1_count", "strip2_count", "strip1_pin", "strip2_pin"}
+        unknown = sorted(k for k in set_dict.keys() if k not in allowed_keys)
+        if unknown:
+            self.publish_cfg_set_result(
+                request_id=request_id,
+                ok=False,
+                applied=None,
+                error=f"unknown cfg key(s): {', '.join(unknown)}",
+                ts=_utc_iso(),
+                action="cfg/set",
+            )
+            return
 
-        # Runtime-applicable config
+        # Runtime-applicable general cfg
         if "brightness" in set_dict:
             self._brightness = _clamp(int(set_dict["brightness"]), 0, 255)
             applied["brightness"] = self._brightness
@@ -294,14 +299,62 @@ class LEDStripComponent(Component):
                 restart_required = True
 
         self.publish_state()
-        self.publish_cfg()
+        self.publish_cfg_general()
         self.publish_cfg_set_result(
             request_id=request_id,
             ok=True,
             applied=applied if applied else None,
             error="restart required for hardware config changes" if restart_required else None,
             ts=_utc_iso(),
+            action="cfg/set",
         )
+
+    def on_cmd_cfg_logging_set(self, payload_str: str) -> None:
+        self._log.info("cmd/cfg/logging/set")
+        super().on_cmd_cfg_logging_set(payload_str)
+
+    def on_cmd_cfg_telemetry_set(self, payload_str: str) -> None:
+        request_id, set_dict, parse_error = self._parse_cfg_set_payload(payload_str)
+        if parse_error:
+            self.publish_cfg_set_result(
+                request_id=request_id,
+                ok=False,
+                applied=None,
+                error=parse_error,
+                ts=_utc_iso(),
+                action="cfg/telemetry/set",
+            )
+            return
+
+        metric_cfg = set_dict.get("pixel_rgb")
+        if metric_cfg is not None:
+            if isinstance(metric_cfg, bool):
+                metric_cfg = {"enabled": metric_cfg}
+            if not isinstance(metric_cfg, dict):
+                self.publish_cfg_set_result(
+                    request_id=request_id,
+                    ok=False,
+                    applied=None,
+                    error="telemetry metric 'pixel_rgb' must be an object or boolean",
+                    ts=_utc_iso(),
+                    action="cfg/telemetry/set",
+                )
+                return
+            if "interval_s" in metric_cfg:
+                try:
+                    self._pixel_telemetry_interval_s = max(1, int(metric_cfg["interval_s"]))
+                except (TypeError, ValueError):
+                    self.publish_cfg_set_result(
+                        request_id=request_id,
+                        ok=False,
+                        applied=None,
+                        error="pixel_rgb.interval_s must be an integer >= 1",
+                        ts=_utc_iso(),
+                        action="cfg/telemetry/set",
+                    )
+                    return
+
+        super().on_cmd_cfg_telemetry_set(payload_str)
 
     # ------------------------------------------------------------------
     # Effect command helpers
