@@ -20,7 +20,7 @@ fx = None
 EffectOrchestrator = None
 LEDStripHardware = None
 
-from .protocol import (
+from .protocol import (  # noqa: E402
     CMD_CLEAR,
     CMD_EFFECT,
     CMD_GET_PIXELS,
@@ -70,7 +70,7 @@ class HelperState:
                 try:
                     self._hardware.clear_all()
                 except Exception:
-                    pass
+                    logger.warning("Failed to clear LEDs before hardware reinit; continuing", exc_info=True)
             self._hardware = LEDStripHardware(
                 strip1_count=strip1_count,
                 strip2_count=strip2_count,
@@ -177,7 +177,9 @@ class HelperState:
         if name not in effect_map:
             raise ValueError(f"unknown effect: {name}")
         fn, defaults = effect_map[name]
-        kwargs = {**defaults, **{k: v for k, v in params.items() if v is not None}}
+        # color=None is intentional (means "use rainbow/multicolor sentinel") so
+        # preserve it; filter None from all other optional params.
+        kwargs = {**defaults, **{k: v for k, v in params.items() if k in ("color", "color_from", "color_to") or v is not None}}
         # Normalize color params (r,g,b) and optional multicolor sentinel
         if "color" in kwargs:
             if isinstance(kwargs["color"], dict):

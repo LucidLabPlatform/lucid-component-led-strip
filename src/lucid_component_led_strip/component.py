@@ -15,7 +15,6 @@ Hardware defaults match the current OptiTrack truss installation of floor T5:
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import time
 from datetime import datetime, timezone
@@ -179,7 +178,7 @@ class LEDStripComponent(Component):
                     self._log.error("pixel_rgb telemetry IPC failure: %s", result.get("error"))
                     self._signal_hardware_failed(result.get("error", "IPC failure"))
             except Exception as e:
-                self._log.debug("pixel_rgb telemetry failed: %s", e)
+                self._log.warning("pixel_rgb telemetry failed: %s", e)
 
     def _start_pixel_telemetry(self) -> None:
         if self._pixel_telemetry_thread is not None:
@@ -210,7 +209,7 @@ class LEDStripComponent(Component):
         self._start_pixel_telemetry()
 
     def _flash_reset(self) -> None:
-        """Brief white flash then clear — visual confirmation of reset. Runs in a background thread."""
+        """Brief red flash then clear — visual confirmation of reset. Runs in a background thread."""
         led_client.set_color({"r": 255, "g": 0, "b": 0})
         time.sleep(0.2)
         led_client.clear()

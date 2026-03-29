@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import sys
 import types
-import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from lucid_component_base import ComponentContext, ComponentStatus
