@@ -14,11 +14,12 @@ Hardware defaults match the current OptiTrack truss installation of floor T5:
 """
 from __future__ import annotations
 
+import copy
 import json
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict
 
 from lucid_component_base import Component, ComponentContext, ComponentStatus
 
@@ -99,6 +100,149 @@ class LEDStripComponent(Component):
 
     def capabilities(self) -> list[str]:
         return ["reset", "ping"] + self.CAPABILITIES
+
+    # RGB color object schema — reused across many command definitions.
+    _RGB: Dict[str, Any] = {
+        "type": "object",
+        "fields": {
+            "r": {"type": "integer", "min": 0, "max": 255},
+            "g": {"type": "integer", "min": 0, "max": 255},
+            "b": {"type": "integer", "min": 0, "max": 255},
+        },
+    }
+
+    def schema(self) -> Dict[str, Any]:
+        s = copy.deepcopy(super().schema())
+
+        # -- publishes --
+
+        s["publishes"]["state"]["fields"] = {
+            "led_count": {"type": "integer"},
+            "brightness": {"type": "integer", "min": 0, "max": 255},
+            "current_effect": {"type": "string"},
+            "hardware_initialized": {"type": "boolean"},
+            "strip1_count": {"type": "integer"},
+            "strip2_count": {"type": "integer"},
+            "strip1_pin": {"type": "integer"},
+            "strip2_pin": {"type": "integer"},
+        }
+
+        s["publishes"]["cfg"]["fields"] = {
+            "brightness": {"type": "integer", "min": 0, "max": 255},
+            "strip1_count": {"type": "integer"},
+            "strip2_count": {"type": "integer"},
+            "strip1_pin": {"type": "integer"},
+            "strip2_pin": {"type": "integer"},
+        }
+
+        s["publishes"]["cfg/telemetry"]["fields"] = {
+            "pixel_rgb": {
+                "type": "object",
+                "fields": {
+                    "enabled": {"type": "boolean"},
+                    "interval_s": {"type": "integer", "min": 1},
+                    "change_threshold_percent": {"type": "float", "min": 0},
+                },
+            },
+        }
+
+        s["publishes"]["telemetry/pixel_rgb"] = {
+            "fields": {
+                "value": {"type": "array", "description": "Array of [r,g,b] per LED pixel"},
+            },
+        }
+
+        # -- subscribes --
+
+        rgb = self._RGB
+
+        # Simple color + speed effect helper
+        _color_speed = {
+            "fields": {
+                "color": rgb,
+                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+            },
+        }
+
+        s["subscribes"]["cmd/clear"] = {"fields": {}}
+
+        s["subscribes"]["cmd/set-color"] = {
+            "fields": {
+                "color": rgb,
+            },
+        }
+
+        s["subscribes"]["cmd/set-range-percent"] = {
+            "fields": {
+                "color": rgb,
+                "start_percent": {"type": "float", "min": 0, "max": 100},
+                "end_percent": {"type": "float", "min": 0, "max": 100},
+            },
+        }
+
+        s["subscribes"]["cmd/set-range-exact"] = {
+            "fields": {
+                "color": rgb,
+                "start_idx": {"type": "integer", "min": 0},
+                "end_idx": {"type": "integer", "min": 0},
+            },
+        }
+
+        s["subscribes"]["cmd/effect/glow"] = _color_speed
+        s["subscribes"]["cmd/effect/wave"] = _color_speed
+        s["subscribes"]["cmd/effect/color-wipe"] = _color_speed
+
+        s["subscribes"]["cmd/effect/color-fade"] = {
+            "fields": {
+                "colors": {
+                    "type": "array",
+                    "items": rgb,
+                },
+                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+            },
+        }
+
+        s["subscribes"]["cmd/effect/sparkle"] = _color_speed
+
+        s["subscribes"]["cmd/effect/rainbow"] = {
+            "fields": {
+                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+            },
+        }
+
+        s["subscribes"]["cmd/effect/rainbow-cycle"] = {
+            "fields": {
+                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+            },
+        }
+
+        s["subscribes"]["cmd/effect/theater-chase"] = _color_speed
+
+        s["subscribes"]["cmd/effect/running"] = {
+            "fields": {
+                "color": rgb,
+                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+                "width": {"type": "integer", "min": 1},
+            },
+        }
+
+        # Override generic cmd/cfg/set with LED-specific allowed keys.
+        s["subscribes"]["cmd/cfg/set"] = {
+            "fields": {
+                "set": {
+                    "type": "object",
+                    "fields": {
+                        "brightness": {"type": "integer", "min": 0, "max": 255},
+                        "strip1_count": {"type": "integer"},
+                        "strip2_count": {"type": "integer"},
+                        "strip1_pin": {"type": "integer"},
+                        "strip2_pin": {"type": "integer"},
+                    },
+                },
+            },
+        }
+
+        return s
 
     def get_cfg_payload(self) -> dict[str, Any]:
         return {
@@ -200,10 +344,11 @@ class LEDStripComponent(Component):
 
     def _publish_all_retained(self) -> None:
         self.publish_metadata()
+        self.publish_schema()
         self.publish_status()
         self.publish_state()
         self.set_telemetry_config({
-            "pixel_rgb": {"enabled": True, "interval_s": self._pixel_telemetry_interval_s, "change_threshold_percent": 0.0},
+            "pixel_rgb": {"enabled": False, "interval_s": 0.1, "change_threshold_percent": 0.0},
         })
         self.publish_cfg()
         self._start_pixel_telemetry()
