@@ -171,7 +171,7 @@ class HelperState:
             "sparkle": (fx.sparkle.run, {"r": -1, "g": -1, "b": -1, "wait_ms": 50, "cumulative": False}),
             "rainbow": (fx.rainbow.run, {"wait_ms": 50}),
             "rainbow-cycle": (fx.rainbow_cycle.run, {"wait_ms": 50}),
-            "theater-chase": (fx.theater_chase.run, {"r": 255, "g": 255, "b": 255, "wait_ms": 50}),
+            "theater-chase": (fx.theater_chase.run, {"r": 255, "g": 255, "b": 255, "wait_ms": 50, "spacing": 3, "width": 1}),
             "running": (fx.running.run, {"r": 255, "g": 255, "b": 255, "wait_ms": 10, "width": 1}),
         }
         if name not in effect_map:

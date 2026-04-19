@@ -644,7 +644,7 @@ class TestTheaterChaseEffect:
                 cancel.set()
 
         with patch("lucid_component_led_strip.effects.theater_chase.time.sleep", stop_after_first):
-            run(hw, cancel, r=-1, g=-1, b=-1, wait_ms=1)
+            run(hw, cancel, r=-1, g=-1, b=-1, wait_ms=1, spacing=3, width=1)
 
         assert hw.shows >= 1
 
@@ -660,7 +660,39 @@ class TestTheaterChaseEffect:
                 cancel.set()
 
         with patch("lucid_component_led_strip.effects.theater_chase.time.sleep", stop_after_first):
-            run(hw, cancel, r=255, g=0, b=128, wait_ms=1)
+            run(hw, cancel, r=255, g=0, b=128, wait_ms=1, spacing=3, width=1)
+
+        assert hw.shows >= 1
+
+    def test_theater_chase_custom_spacing(self):
+        from lucid_component_led_strip.effects.theater_chase import run
+        hw = _FakeHardware(12)
+        cancel = threading.Event()
+        count = [0]
+
+        def stop_after(t):
+            count[0] += 1
+            if count[0] >= 4:
+                cancel.set()
+
+        with patch("lucid_component_led_strip.effects.theater_chase.time.sleep", stop_after):
+            run(hw, cancel, r=255, g=0, b=0, wait_ms=1, spacing=4, width=1)
+
+        assert hw.shows >= 1
+
+    def test_theater_chase_custom_width(self):
+        from lucid_component_led_strip.effects.theater_chase import run
+        hw = _FakeHardware(12)
+        cancel = threading.Event()
+        count = [0]
+
+        def stop_after(t):
+            count[0] += 1
+            if count[0] >= 4:
+                cancel.set()
+
+        with patch("lucid_component_led_strip.effects.theater_chase.time.sleep", stop_after):
+            run(hw, cancel, r=0, g=255, b=0, wait_ms=1, spacing=4, width=2)
 
         assert hw.shows >= 1
 
@@ -1226,6 +1258,14 @@ class TestEffectCommandHandlers:
         ctx, comp = self._run_effect_cmd(
             "on_cmd_effect_theater_chase",
             {"request_id": "fx-tc-2", "color": {"r": 0, "g": 0, "b": 255}},
+        )
+        results = _published_results(ctx, "evt/effect/theater-chase/result")
+        assert results and results[0]["ok"] is True
+
+    def test_effect_theater_chase_with_spacing_and_width(self):
+        ctx, comp = self._run_effect_cmd(
+            "on_cmd_effect_theater_chase",
+            {"request_id": "fx-tc-3", "color": {"r": 255, "g": 100, "b": 0}, "spacing": 5, "width": 2},
         )
         results = _published_results(ctx, "evt/effect/theater-chase/result")
         assert results and results[0]["ok"] is True

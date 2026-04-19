@@ -216,7 +216,14 @@ class LEDStripComponent(Component):
             },
         }
 
-        s["subscribes"]["cmd/effect/theater-chase"] = _color_speed
+        s["subscribes"]["cmd/effect/theater-chase"] = {
+            "fields": {
+                "color": rgb,
+                "wait_ms": {"type": "integer", "min": 1},
+                "spacing": {"type": "integer", "min": 1},
+                "width": {"type": "integer", "min": 1},
+            },
+        }
 
         s["subscribes"]["cmd/effect/running"] = {
             "fields": {
@@ -797,7 +804,12 @@ class LEDStripComponent(Component):
 
         color_dict = params.get("color")  # None → multicolor
         led_client.stop_effect()
-        result = led_client.effect("theater-chase", {"color": color_dict, "wait_ms": params.get("wait_ms", 50)})
+        result = led_client.effect("theater-chase", {
+            "color": color_dict,
+            "wait_ms": params.get("wait_ms", 50),
+            "spacing": params.get("spacing", 3),
+            "width": params.get("width", 1),
+        })
         if not result.get("ok") and _is_ipc_failure(result.get("error")):
             self._signal_hardware_failed(result.get("error", "IPC failure"))
         if result.get("ok"):
