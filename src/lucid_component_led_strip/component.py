@@ -175,8 +175,8 @@ class LEDStripComponent(Component):
         s["subscribes"]["cmd/set-range-percent"] = {
             "fields": {
                 "color": rgb,
-                "start_percent": {"type": "float", "min": 0, "max": 100},
-                "end_percent": {"type": "float", "min": 0, "max": 100},
+                "start_percent": {"type": "float", "min": 0, "max": 1},
+                "end_percent": {"type": "float", "min": 0, "max": 1},
             },
         }
 
