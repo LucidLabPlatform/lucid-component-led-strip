@@ -156,11 +156,12 @@ class LEDStripComponent(Component):
 
         rgb = self._RGB
 
-        # Simple color + speed effect helper
-        _color_speed = {
+        # Simple color + frame-rate effect helper.
+        # wait_ms is the per-frame sleep in milliseconds (lower = faster animation).
+        _color_wait = {
             "fields": {
                 "color": rgb,
-                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+                "wait_ms": {"type": "integer", "min": 1},
             },
         }
 
@@ -183,36 +184,44 @@ class LEDStripComponent(Component):
         s["subscribes"]["cmd/set-range-exact"] = {
             "fields": {
                 "color": rgb,
-                "start_idx": {"type": "integer", "min": 0},
-                "end_idx": {"type": "integer", "min": 0},
+                "start_index": {"type": "integer", "min": 0},
+                "end_index": {"type": "integer", "min": 0},
             },
         }
 
-        s["subscribes"]["cmd/effect/glow"] = _color_speed
-        s["subscribes"]["cmd/effect/wave"] = _color_speed
-        s["subscribes"]["cmd/effect/color-wipe"] = _color_speed
+        s["subscribes"]["cmd/effect/glow"] = _color_wait
+        s["subscribes"]["cmd/effect/color-wipe"] = _color_wait
+        s["subscribes"]["cmd/effect/sparkle"] = _color_wait
+
+        # wave has both wait_ms (frame rate) and speed (phase shift per frame);
+        # cycles is the number of wave cycles visible across the strip.
+        s["subscribes"]["cmd/effect/wave"] = {
+            "fields": {
+                "color": rgb,
+                "wait_ms": {"type": "integer", "min": 1},
+                "speed": {"type": "float", "min": 0.0, "max": 5.0},
+                "cycles": {"type": "integer", "min": 1},
+            },
+        }
 
         s["subscribes"]["cmd/effect/color-fade"] = {
             "fields": {
-                "colors": {
-                    "type": "array",
-                    "items": rgb,
-                },
-                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+                "color_from": rgb,
+                "color_to": rgb,
+                "wait_ms": {"type": "integer", "min": 1},
+                "steps": {"type": "integer", "min": 1},
             },
         }
 
-        s["subscribes"]["cmd/effect/sparkle"] = _color_speed
-
         s["subscribes"]["cmd/effect/rainbow"] = {
             "fields": {
-                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+                "wait_ms": {"type": "integer", "min": 1},
             },
         }
 
         s["subscribes"]["cmd/effect/rainbow-cycle"] = {
             "fields": {
-                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+                "wait_ms": {"type": "integer", "min": 1},
             },
         }
 
@@ -228,7 +237,7 @@ class LEDStripComponent(Component):
         s["subscribes"]["cmd/effect/running"] = {
             "fields": {
                 "color": rgb,
-                "speed": {"type": "float", "min": 0.1, "max": 5.0},
+                "wait_ms": {"type": "integer", "min": 1},
                 "width": {"type": "integer", "min": 1},
             },
         }
