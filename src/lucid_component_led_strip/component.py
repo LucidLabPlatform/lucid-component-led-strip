@@ -323,6 +323,7 @@ class LEDStripComponent(Component):
         led_client.reset()
         self._current_effect = None
         self._hardware_initialized = False
+        led_client.close()
         self._log.info("Stopped component: %s", self.component_id)
 
     def _pixel_telemetry_loop(self) -> None:

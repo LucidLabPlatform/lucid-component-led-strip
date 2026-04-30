@@ -2,15 +2,18 @@
 IPC client for the LED strip helper daemon.
 
 Used by the LUCID component (running as normal user) to send commands to the
-root-owned helper. Connects to the Unix socket, sends JSON-line requests,
-reads JSON-line responses. Reconnects on each call (no long-lived connection).
+root-owned helper. Maintains a persistent Unix-socket connection guarded by a
+module-level lock; reconnects transparently on broken pipe / timeout. The
+helper's per-connection serve loop is sequential, so a single shared socket
+matches its threading model.
 """
 from __future__ import annotations
 
 import json
 import os
 import socket
-from typing import Any
+import threading
+from typing import Any, Optional
 
 from .protocol import (
     CMD_CLEAR,
@@ -27,34 +30,89 @@ from .protocol import (
     DEFAULT_SOCKET_PATH,
 )
 
+_CONNECT_TIMEOUT_S = 10.0
+_REQUEST_TIMEOUT_S = 10.0
+
+_lock = threading.Lock()
+_sock: Optional[socket.socket] = None
+# Holds bytes received past the first '\n' on a keep-alive read — must be
+# preserved across calls or the next response is silently corrupted.
+_recv_buf = bytearray()
+
 
 def _socket_path() -> str:
     return os.environ.get("LUCID_LED_STRIP_SOCKET", DEFAULT_SOCKET_PATH)
 
 
-def _request(cmd: str, **params: Any) -> dict:
-    path = _socket_path()
-    req = {"id": 1, "cmd": cmd, **params}
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        sock.settimeout(10.0)
-        sock.connect(path)
-        sock.sendall((json.dumps(req) + "\n").encode("utf-8"))
-        buf = b""
-        while b"\n" not in buf:
-            chunk = sock.recv(4096)
-            if not chunk:
-                return {"ok": False, "error": "connection closed"}
-            buf += chunk
-        line = buf.split(b"\n", 1)[0].decode("utf-8")
-        return json.loads(line)
-    except (FileNotFoundError, ConnectionRefusedError, OSError) as e:
-        return {"ok": False, "error": str(e)}
-    finally:
+def _close_socket() -> None:
+    """Close the cached socket and reset the recv buffer. Caller holds _lock."""
+    global _sock
+    if _sock is not None:
         try:
-            sock.close()
+            _sock.close()
         except OSError:
             pass
+        _sock = None
+    _recv_buf.clear()
+
+
+def _connect() -> socket.socket:
+    """Open a fresh Unix socket to the helper. Caller holds _lock."""
+    global _sock
+    path = _socket_path()
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(_CONNECT_TIMEOUT_S)
+    sock.connect(path)
+    sock.settimeout(_REQUEST_TIMEOUT_S)
+    _recv_buf.clear()
+    _sock = sock
+    return sock
+
+
+def _send_and_recv(sock: socket.socket, payload: bytes) -> dict:
+    """Send a request and read one '\\n'-terminated JSON response.
+
+    Caller holds _lock. Any bytes received past the terminator are stashed in
+    _recv_buf for the next call. May raise OSError / socket.timeout /
+    json.JSONDecodeError; the public _request handles those.
+    """
+    sock.sendall(payload)
+    while b"\n" not in _recv_buf:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise ConnectionResetError("helper closed connection")
+        _recv_buf.extend(chunk)
+    nl_idx = _recv_buf.index(b"\n")
+    line = bytes(_recv_buf[:nl_idx])
+    del _recv_buf[: nl_idx + 1]
+    return json.loads(line.decode("utf-8"))
+
+
+def _request(cmd: str, **params: Any) -> dict:
+    """Send a command, returning the helper's JSON response.
+
+    Reuses a persistent socket; on socket / decode errors, closes and retries
+    once with a fresh connection before giving up.
+    """
+    payload = (json.dumps({"id": 1, "cmd": cmd, **params}) + "\n").encode("utf-8")
+    with _lock:
+        for attempt in (1, 2):
+            try:
+                sock = _sock if _sock is not None else _connect()
+                return _send_and_recv(sock, payload)
+            except (BrokenPipeError, ConnectionResetError, socket.timeout,
+                    json.JSONDecodeError, OSError) as e:
+                _close_socket()
+                if attempt == 2:
+                    return {"ok": False, "error": str(e) or e.__class__.__name__}
+        # Unreachable — loop always returns or falls into the final branch above.
+        return {"ok": False, "error": "request failed"}
+
+
+def close() -> None:
+    """Close the cached socket. Safe to call repeatedly."""
+    with _lock:
+        _close_socket()
 
 
 def init(
