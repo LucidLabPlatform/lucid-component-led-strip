@@ -20,7 +20,6 @@ from .protocol import (
     CMD_EFFECT,
     CMD_GET_PIXELS,
     CMD_INIT,
-    CMD_PING,
     CMD_RESET,
     CMD_SET_BRIGHTNESS,
     CMD_SET_COLOR,
@@ -185,11 +184,6 @@ def set_range_exact(
 def effect(name: str, params: dict[str, Any] | None = None) -> dict:
     """Start an effect by name with optional params."""
     return _request(CMD_EFFECT, name=name, params=params or {})
-
-
-def ping() -> dict:
-    """Check if helper is reachable and hardware is initialized. Returns {ok: bool, error?: str}."""
-    return _request(CMD_PING)
 
 
 def get_pixels() -> dict:

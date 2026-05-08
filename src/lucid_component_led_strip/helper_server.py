@@ -25,7 +25,6 @@ from .protocol import (  # noqa: E402
     CMD_EFFECT,
     CMD_GET_PIXELS,
     CMD_INIT,
-    CMD_PING,
     CMD_RESET,
     CMD_SET_BRIGHTNESS,
     CMD_SET_COLOR,
@@ -59,7 +58,6 @@ class HelperState:
         self._lock = threading.Lock()
         self._hardware = None
         self._orchestrator = None
-        self._config: dict | None = None
 
     def init(self, strip1_count: int, strip2_count: int, strip1_pin: int, strip2_pin: int, brightness: int) -> None:
         if self._orchestrator is None:
@@ -78,13 +76,6 @@ class HelperState:
                 strip2_pin=strip2_pin,
                 brightness=brightness,
             )
-            self._config = {
-                "strip1_count": strip1_count,
-                "strip2_count": strip2_count,
-                "strip1_pin": strip1_pin,
-                "strip2_pin": strip2_pin,
-                "brightness": brightness,
-            }
         logger.info("Hardware initialized: %d + %d LEDs", strip1_count, strip2_count)
 
     def _hw(self) -> LEDStripHardware | None:
@@ -106,8 +97,6 @@ class HelperState:
             if self._hardware is None:
                 raise RuntimeError("hardware not initialized")
             self._hardware.set_brightness(value)
-            if self._config is not None:
-                self._config["brightness"] = value
 
     def clear(self) -> None:
         with self._lock:
@@ -210,11 +199,6 @@ def _handle_request(state: HelperState, req: dict) -> dict:
     if not cmd:
         return {"id": rid, "ok": False, "error": "missing cmd"}
     try:
-        if cmd == CMD_PING:
-            # No-op to check connectivity / hardware ready
-            if state._hw() is None:
-                return {"id": rid, "ok": False, "error": "hardware not initialized"}
-            return {"id": rid, "ok": True}
         if cmd == CMD_INIT:
             state.init(
                 strip1_count=int(req.get("strip1_count", 896)),

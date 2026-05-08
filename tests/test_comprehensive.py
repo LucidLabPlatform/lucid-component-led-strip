@@ -187,9 +187,9 @@ class TestProtocol:
         assert protocol.CMD_SET_RANGE_PERCENT == "set_range_percent"
         assert protocol.CMD_SET_RANGE_EXACT == "set_range_exact"
         assert protocol.CMD_EFFECT == "effect"
-        assert protocol.CMD_PING == "ping"
         assert protocol.CMD_GET_PIXELS == "get_pixels"
         assert protocol.DEFAULT_SOCKET_PATH == "/run/lucid/led-strip.sock"
+        assert not hasattr(protocol, "CMD_PING")
 
 
 # ===========================================================================
@@ -333,7 +333,7 @@ class TestEffectOrchestrator:
 
     def test_initial_state(self):
         orch = EffectOrchestrator()
-        assert orch.current_effect is None
+        assert orch._current_effect is None
 
     def test_stop_with_no_active_effect_is_noop(self):
         orch = EffectOrchestrator()
@@ -346,7 +346,7 @@ class TestEffectOrchestrator:
             cancel.wait(timeout=2.0)
 
         orch.start("test-fx", my_effect, object())
-        assert orch.current_effect == "test-fx"
+        assert orch._current_effect == "test-fx"
         orch.stop()
 
     def test_stop_clears_current_effect(self):
@@ -360,7 +360,7 @@ class TestEffectOrchestrator:
         orch.start("test-fx", my_effect, object())
         started.wait(timeout=1.0)
         orch.stop()
-        assert orch.current_effect is None
+        assert orch._current_effect is None
 
     def test_starting_new_effect_stops_previous(self):
         orch = EffectOrchestrator()
@@ -376,7 +376,7 @@ class TestEffectOrchestrator:
         orch.start("slow", slow_effect, object())
         orch.start("fast", fast_effect, object())  # should stop "slow" first
         assert stopped_first.wait(timeout=2.0)
-        assert orch.current_effect == "fast"
+        assert orch._current_effect == "fast"
         orch.stop()
 
     def test_effect_that_exits_naturally_clears_current_effect(self):
@@ -389,7 +389,7 @@ class TestEffectOrchestrator:
         # Give thread time to finish
         import time
         time.sleep(0.1)
-        assert orch.current_effect is None
+        assert orch._current_effect is None
 
     def test_effect_exception_is_logged_not_raised(self):
         orch = EffectOrchestrator()
@@ -401,7 +401,7 @@ class TestEffectOrchestrator:
         import time
         time.sleep(0.1)
         # Should not propagate; orchestrator should still be usable
-        assert orch.current_effect is None
+        assert orch._current_effect is None
         orch.stop()  # no-op
 
     def test_params_forwarded_to_effect(self):
@@ -861,16 +861,16 @@ class TestCommandClear:
             comp.on_cmd_clear(json.dumps({"request_id": "clr-3"}))
         assert comp._hardware_initialized is False
 
-    def test_clear_invalid_json_uses_empty_request_id(self):
+    def test_clear_invalid_json_raises_cmd_payload_error(self):
+        # on_cmd_clear now delegates JSON parsing to _parse_cmd_payload, which raises
+        # CmdPayloadError (a ValueError subclass) on bad JSON. In production the
+        # _make_cmd_handler wrapper catches this and publishes ok=False; direct calls raise.
+        from lucid_component_base.base import CmdPayloadError
         ctx = _fake_context()
         comp = LEDStripComponent(ctx)
-        with patch("lucid_component_led_strip.component.led_client") as mc:
-            mc.clear.return_value = {"ok": True}
-            comp._hardware_initialized = True
+        comp._hardware_initialized = True
+        with pytest.raises((CmdPayloadError, ValueError)):
             comp.on_cmd_clear("not-json")
-        # Should not raise; result published with empty request_id
-        results = _published_results(ctx, "evt/clear/result")
-        assert results
 
 
 class TestCommandReset:
@@ -911,12 +911,14 @@ class TestCommandPing:
         assert results[0]["request_id"] == "ping-1"
         comp.stop()
 
-    def test_ping_with_invalid_json(self):
+    def test_ping_with_invalid_json_raises_cmd_payload_error(self):
+        # Direct handler call with bad JSON now raises CmdPayloadError via _parse_cmd_payload.
+        # In production the _make_cmd_handler wrapper catches and publishes ok=False.
+        from lucid_component_base.base import CmdPayloadError
         ctx = _fake_context()
         comp = LEDStripComponent(ctx)
-        comp.on_cmd_ping("{bad json")  # should not raise
-        results = _published_results(ctx, "evt/ping/result")
-        assert results  # still publishes
+        with pytest.raises((CmdPayloadError, ValueError)):
+            comp.on_cmd_ping("{bad json")
 
 
 class TestCommandSetColor:
@@ -1488,11 +1490,12 @@ class TestHandleRequest:
         assert resp["ok"] is False
         assert "unknown cmd" in resp["error"]
 
-    def test_ping_without_hardware(self):
+    def test_ping_cmd_is_unknown(self):
+        # CMD_PING was removed from the server-side dispatch; "ping" now routes to unknown-cmd.
         state = helper_server.HelperState()
         resp = helper_server._handle_request(state, {"id": 1, "cmd": "ping"})
         assert resp["ok"] is False
-        assert "hardware not initialized" in resp["error"]
+        assert "unknown cmd" in resp["error"]
 
     def test_get_pixels_without_hardware(self):
         state = helper_server.HelperState()
@@ -1590,11 +1593,6 @@ class TestClientSocketErrors:
         result = led_client_module.get_pixels()
         assert isinstance(result, dict)
 
-    def test_ping_returns_dict(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
-        monkeypatch.setenv("LUCID_LED_STRIP_SOCKET", str(tmp_path / "noexist.sock"))
-        result = led_client_module.ping()
-        assert isinstance(result, dict)
-
     def test_set_brightness_returns_dict(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
         monkeypatch.setenv("LUCID_LED_STRIP_SOCKET", str(tmp_path / "noexist.sock"))
         result = led_client_module.set_brightness(200)
@@ -1647,7 +1645,7 @@ class TestClientSocketErrors:
         t = threading.Thread(target=close_immediately, daemon=True)
         t.start()
 
-        result = led_client_module.ping()
+        result = led_client_module.get_pixels()
         t.join(timeout=3.0)
         assert result["ok"] is False
         assert result["error"] in ("connection closed", ) or result["error"]

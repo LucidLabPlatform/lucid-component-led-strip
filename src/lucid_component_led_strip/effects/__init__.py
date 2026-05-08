@@ -62,11 +62,6 @@ class EffectOrchestrator:
         self._effect_thread: threading.Thread | None = None
         self._current_effect: str | None = None
 
-    @property
-    def current_effect(self) -> str | None:
-        with self._lock:
-            return self._current_effect
-
     def start(
         self,
         effect_name: str,
