@@ -21,7 +21,7 @@ setup:
 setup-venv:
 	@test -d $(VENV) || ($(PYTHON) -m venv $(VENV) && echo "Created $(VENV).")
 	@$(VENV)/bin/pip install -q -e . --no-deps
-	@$(VENV)/bin/pip install -q "lucid-component-base @ git+https://github.com/LucidLabPlatform/lucid-component-base@v2.0.0" "numpy>=2.0.0" pytest build pytest-cov
+	@$(VENV)/bin/pip install -q "lucid-component-base @ git+https://github.com/LucidLabPlatform/lucid-component-base@v2.4.0" "numpy>=2.0.0" pytest build pytest-cov
 	@echo "Ready. Run 'make test' or 'make build'."
 
 dev:
